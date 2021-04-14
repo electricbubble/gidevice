@@ -109,7 +109,7 @@ type DeviceProperties struct {
 
 	EscapedFullServiceName string `plist:"EscapedFullServiceName"`
 	InterfaceIndex         int    `plist:"InterfaceIndex"`
-	NetworkAddress         uint8  `plist:"NetworkAddress"`
+	NetworkAddress         []byte `plist:"NetworkAddress"`
 }
 
 func NewUsbmuxClient(opts ...InnerConnOption) (c *UsbmuxClient, err error) {
