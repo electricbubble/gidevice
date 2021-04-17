@@ -112,18 +112,17 @@ type DeviceProperties struct {
 	NetworkAddress         []byte `plist:"NetworkAddress"`
 }
 
-func NewUsbmuxClient(opts ...InnerConnOption) (c *UsbmuxClient, err error) {
+func NewUsbmuxClient(timeout ...time.Duration) (c *UsbmuxClient, err error) {
+	if len(timeout) == 0 {
+		timeout = []time.Duration{DefaultDeadlineTimeout}
+	}
 	c = &UsbmuxClient{version: ProtoVersionPlist}
 	var conn net.Conn
-	if conn, err = rawDial(); err != nil {
+	if conn, err = rawDial(timeout[0]); err != nil {
 		return nil, fmt.Errorf("usbmux connect: %w", err)
 	}
 
-	innerConn := newInnerConn(conn)
-	for _, opt := range opts {
-		opt(innerConn)
-	}
-	c.innerConn = innerConn
+	c.innerConn = newInnerConn(conn, timeout[0])
 	return
 }
 
@@ -260,9 +259,9 @@ func (c *UsbmuxClient) InnerConn() InnerConn {
 	return c.innerConn
 }
 
-func rawDial() (net.Conn, error) {
+func rawDial(timeout time.Duration) (net.Conn, error) {
 	dialer := net.Dialer{
-		Timeout: DefaultDeadlineTimeout,
+		Timeout: timeout,
 	}
 
 	var network, address string
@@ -278,14 +277,6 @@ func rawDial() (net.Conn, error) {
 	return dialer.Dial(network, address)
 }
 
-type InnerConnOption func(innerConn InnerConn)
-
-func TimeoutOption(duration time.Duration) InnerConnOption {
-	return func(innerConn InnerConn) {
-		innerConn.Timeout(duration)
-	}
-}
-
 type InnerConn interface {
 	Write(data []byte) (err error)
 	Read(length int) (data []byte, err error)
@@ -296,10 +287,10 @@ type InnerConn interface {
 	Timeout(time.Duration)
 }
 
-func newInnerConn(conn net.Conn) InnerConn {
+func newInnerConn(conn net.Conn, timeout time.Duration) InnerConn {
 	return &safeConn{
 		conn:    conn,
-		timeout: DefaultDeadlineTimeout,
+		timeout: timeout,
 	}
 }
 

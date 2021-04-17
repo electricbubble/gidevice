@@ -42,8 +42,8 @@ func (d *device) Properties() DeviceProperties {
 	return *d.properties
 }
 
-func (d *device) NewConnect(port int) (InnerConn, error) {
-	newClient, err := libimobiledevice.NewUsbmuxClient()
+func (d *device) NewConnect(port int, timeout ...time.Duration) (InnerConn, error) {
+	newClient, err := libimobiledevice.NewUsbmuxClient(timeout...)
 	if err != nil {
 		return nil, err
 	}

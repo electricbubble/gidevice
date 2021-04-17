@@ -19,7 +19,7 @@ type Usbmux interface {
 type Device interface {
 	Properties() DeviceProperties
 
-	NewConnect(port int) (InnerConn, error)
+	NewConnect(port int, timeout ...time.Duration) (InnerConn, error)
 	ReadPairRecord() (pairRecord *PairRecord, err error)
 	SavePairRecord(pairRecord *PairRecord) (err error)
 	DeletePairRecord() (err error)
