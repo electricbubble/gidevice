@@ -403,13 +403,14 @@ func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.Canc
 		// fmt.Println("###### xcTestManager2 ### -->", m)
 		if strings.Contains(fmt.Sprintf("%s", m), "Received test runner ready reply with error: (null)") {
 			// fmt.Println("###### xcTestManager2 ### -->", fmt.Sprintf("%v", m.Aux[0]))
+			time.Sleep(time.Second)
 			if err = xcTestManager2.startExecutingTestPlan(xcodeVersion); err != nil {
 				debugLog(fmt.Sprintf("startExecutingTestPlan %d: %s", xcodeVersion, err))
 				return
 			}
 		}
 	})
-	xcTestManager2.registerCallback("_Unregistered_Golang-iDevice", func(m libimobiledevice.DTXMessageResult) {
+	xcTestManager2.registerCallback("_Golang-iDevice_Unregistered", func(m libimobiledevice.DTXMessageResult) {
 		// more information
 		//  _XCT_testRunnerReadyWithCapabilities:
 		//  _XCT_didBeginExecutingTestPlan
@@ -532,6 +533,10 @@ func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.Canc
 		// 	close(_out)
 		// 	fmt.Println("#####DONE")
 		// }
+
+		d.instruments.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			cancelFunc()
+		})
 
 		for {
 			select {

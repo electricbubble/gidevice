@@ -3,6 +3,7 @@
 [![go report](https://goreportcard.com/badge/github.com/electricbubble/gidevice)](https://goreportcard.com/report/github.com/electricbubble/gidevice)
 [![license](https://img.shields.io/github/license/electricbubble/gidevice)](https://github.com/electricbubble/gidevice/blob/master/LICENSE)
 
+> much more easy to use 👉 [electricbubble/gidevice-cli](https://github.com/electricbubble/gidevice-cli)
 
 ## Installation
 

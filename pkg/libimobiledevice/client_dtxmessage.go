@@ -13,7 +13,10 @@ import (
 	"unsafe"
 )
 
-const _unregistered = "_Unregistered_Golang-iDevice"
+const (
+	_unregistered = "_Golang-iDevice_Unregistered"
+	_over         = "_Golang-iDevice_Over"
+)
 
 func newDtxMessageClient(innerConn InnerConn) *dtxMessageClient {
 	c := &dtxMessageClient{
@@ -29,6 +32,7 @@ func newDtxMessageClient(innerConn InnerConn) *dtxMessageClient {
 		callbackMap: make(map[string]func(m DTXMessageResult)),
 	}
 	c.RegisterCallback(_unregistered, func(m DTXMessageResult) {})
+	c.RegisterCallback(_over, func(m DTXMessageResult) {})
 	c.startReceive()
 	c.startWaitingForReply()
 	c.ctx, c.cancelFunc = context.WithCancel(context.TODO())
@@ -322,6 +326,8 @@ func (c *dtxMessageClient) startReceive() {
 				if _, err := c.ReceiveDTXMessage(); err != nil {
 					debugLog(fmt.Sprintf("dtx: receive: %s", err))
 					if strings.Contains(err.Error(), io.EOF.Error()) {
+						c.cancelFunc()
+						c.callbackMap[_over](DTXMessageResult{})
 						break
 					}
 				}

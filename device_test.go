@@ -2,9 +2,9 @@ package giDevice
 
 import (
 	"fmt"
-	"sync"
+	"os"
+	"os/signal"
 	"testing"
-	"time"
 )
 
 var dev Device
@@ -73,23 +73,23 @@ func Test_device_XCTest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt)
 
 	go func() {
 		for s := range out {
 			fmt.Print(s)
 		}
+		done <- os.Interrupt
 	}()
 
-	go func() {
-		time.Sleep(10 * time.Second)
-		cancel()
-		t.Log("DONE")
-		wg.Done()
-	}()
-
-	wg.Wait()
-
-	time.Sleep(5 * time.Second)
+	for {
+		select {
+		case <-done:
+			cancel()
+			fmt.Println()
+			t.Log("DONE")
+			return
+		}
+	}
 }
