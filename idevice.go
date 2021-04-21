@@ -51,6 +51,10 @@ type Device interface {
 	AppList(opts ...AppListOption) (apps []Application, err error)
 	DeviceInfo() (devInfo *DeviceInfo, err error)
 
+	AfcService() (afc Afc, err error)
+	AppInstall(ipaPath string) (err error)
+	AppUninstall(bundleID string) (err error)
+
 	HouseArrestService() (houseArrest HouseArrest, err error)
 
 	XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error)
@@ -103,6 +107,8 @@ type SimulateLocation interface {
 type InstallationProxy interface {
 	Browse(opts ...InstallationProxyOption) (currentList []interface{}, err error)
 	Lookup(opts ...InstallationProxyOption) (lookupResult interface{}, err error)
+	Install(bundleID, packagePath string) (err error)
+	Uninstall(bundleID string) (err error)
 }
 
 type Instruments interface {

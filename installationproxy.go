@@ -94,3 +94,68 @@ func (p *installationProxy) Lookup(opts ...InstallationProxyOption) (lookupResul
 	return
 
 }
+
+func (p *installationProxy) Install(bundleID, packagePath string) (err error) {
+	var pkt libimobiledevice.Packet
+	if pkt, err = p.client.NewXmlPacket(
+		p.client.NewInstallRequest(bundleID, packagePath),
+	); err != nil {
+		return err
+	}
+
+	if err = p.client.SendPacket(pkt); err != nil {
+		return err
+	}
+
+	var reply libimobiledevice.InstallationProxyInstallResponse
+	for len(reply.Error) == 0 {
+		var respPkt libimobiledevice.Packet
+		if respPkt, err = p.client.ReceivePacket(); err != nil {
+			return err
+		}
+		if err = respPkt.Unmarshal(&reply); err != nil {
+			return err
+		}
+		if reply.Status == "Complete" {
+			break
+		}
+	}
+
+	if len(reply.Error) != 0 {
+		return fmt.Errorf("installation proxy 'Install' status: %s (err: %s, desc: %s)", reply.Status, reply.Error, reply.ErrorDescription)
+	}
+
+	return
+}
+
+func (p *installationProxy) Uninstall(bundleID string) (err error) {
+	var pkt libimobiledevice.Packet
+	if pkt, err = p.client.NewXmlPacket(
+		p.client.NewUninstallRequest(bundleID),
+	); err != nil {
+		return err
+	}
+
+	if err = p.client.SendPacket(pkt); err != nil {
+		return err
+	}
+
+	var reply libimobiledevice.InstallationProxyInstallResponse
+	for len(reply.Error) == 0 {
+		var respPkt libimobiledevice.Packet
+		if respPkt, err = p.client.ReceivePacket(); err != nil {
+			return err
+		}
+		if err = respPkt.Unmarshal(&reply); err != nil {
+			return err
+		}
+		if reply.Status == "Complete" {
+			break
+		}
+	}
+
+	if len(reply.Error) != 0 {
+		return fmt.Errorf("installation proxy 'Uninstall' status: %s (err: %s, desc: %s)", reply.Status, reply.Error, reply.ErrorDescription)
+	}
+	return
+}

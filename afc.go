@@ -3,6 +3,7 @@ package giDevice
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"strconv"
 	"time"
 )
+
+var ErrAfcStatNotExist = errors.New("afc stat: no such file or directory")
 
 var _ Afc = (*afc)(nil)
 
@@ -70,6 +73,11 @@ func (c *afc) Stat(filename string) (info *AfcFileInfo, err error) {
 	}
 
 	m := respMsg.Map()
+
+	if len(m) == 0 {
+		return nil, ErrAfcStatNotExist
+	}
+
 	info = &AfcFileInfo{
 		source: m,
 		name:   path.Base(filename),

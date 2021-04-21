@@ -3,11 +3,15 @@ package giDevice
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"github.com/electricbubble/gidevice/pkg/ipa"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
+	"io/ioutil"
+	"path"
 	"strings"
 	"time"
 )
@@ -35,6 +39,7 @@ type device struct {
 	simulateLocation  SimulateLocation
 	installationProxy InstallationProxy
 	instruments       Instruments
+	afc               Afc
 	houseArrest       HouseArrest
 }
 
@@ -347,6 +352,75 @@ func (d *device) testmanagerdService() (testmanagerd Testmanagerd, err error) {
 	}
 	return
 }
+
+func (d *device) AfcService() (afc Afc, err error) {
+	if d.afc != nil {
+		return d.afc, nil
+	}
+	if _, err = d.lockdownService(); err != nil {
+		return nil, err
+	}
+	if d.afc, err = d.lockdown.AfcService(); err != nil {
+		return nil, err
+	}
+	afc = d.afc
+	return
+}
+
+func (d *device) AppInstall(ipaPath string) (err error) {
+	if _, err = d.AfcService(); err != nil {
+		return err
+	}
+
+	stagingPath := "PublicStaging"
+	if _, err = d.afc.Stat(stagingPath); err != nil {
+		if err != ErrAfcStatNotExist {
+			return err
+		}
+		if err = d.afc.Mkdir(stagingPath); err != nil {
+			return fmt.Errorf("app install: %w", err)
+		}
+	}
+
+	var info map[string]interface{}
+	if info, err = ipa.Info(ipaPath); err != nil {
+		return err
+	}
+	bundleID, ok := info["CFBundleIdentifier"]
+	if !ok {
+		return errors.New("can't find 'CFBundleIdentifier'")
+	}
+
+	installationPath := path.Join(stagingPath, fmt.Sprintf("%s.ipa", bundleID))
+
+	var file *AfcFile
+	if file, err = d.afc.Open(installationPath, AfcFileModeWr); err != nil {
+		return err
+	}
+
+	if data, err := ioutil.ReadFile(ipaPath); err != nil {
+		return err
+	} else {
+		if _, err := file.Write(data); err != nil {
+			return err
+		}
+	}
+
+	if _, err = d.installationProxyService(); err != nil {
+		return err
+	}
+
+	return d.installationProxy.Install(fmt.Sprintf("%s", bundleID), installationPath)
+}
+
+func (d *device) AppUninstall(bundleID string) (err error) {
+	if _, err = d.installationProxyService(); err != nil {
+		return err
+	}
+
+	return d.installationProxy.Uninstall(bundleID)
+}
+
 func (d *device) HouseArrestService() (houseArrest HouseArrest, err error) {
 	if d.houseArrest != nil {
 		return d.houseArrest, nil
@@ -521,19 +595,6 @@ func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.Canc
 	}
 
 	go func() {
-		// for range ctx.Done() {
-		// 	if _err := d.AppKill(pid); _err != nil {
-		// 		debugLog(fmt.Sprintf("xctest kill: %d", pid))
-		// 	}
-		// 	tmSrv1.close()
-		// 	tmSrv2.close()
-		// 	xcTestManager1.close()
-		// 	xcTestManager2.close()
-		// 	time.Sleep(time.Second)
-		// 	close(_out)
-		// 	fmt.Println("#####DONE")
-		// }
-
 		d.instruments.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
 			cancelFunc()
 		})

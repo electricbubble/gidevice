@@ -93,3 +93,23 @@ func Test_device_XCTest(t *testing.T) {
 		}
 	}
 }
+
+func Test_device_AppInstall(t *testing.T) {
+	setupLockdownSrv(t)
+
+	ipaPath := "/private/tmp/derivedDataPath/Build/Products/Release-iphoneos/WebDriverAgentRunner-Runner.ipa"
+	err := dev.AppInstall(ipaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func Test_device_AppUninstall(t *testing.T) {
+	setupLockdownSrv(t)
+
+	bundleID = "com.leixipaopao.WebDriverAgentRunner.xctrunner"
+	err := dev.AppUninstall(bundleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
