@@ -12,8 +12,9 @@ var _ SyslogRelay = (*syslogRelay)(nil)
 
 func newSyslogRelay(client *libimobiledevice.SyslogRelayClient) *syslogRelay {
 	r := &syslogRelay{
-		client: client,
-		stop:   make(chan bool),
+		client:    client,
+		stop:      make(chan bool),
+		isReading: false,
 	}
 	r.reader = bufio.NewReader(r.client.InnerConn().RawConn())
 	return r
@@ -22,18 +23,23 @@ func newSyslogRelay(client *libimobiledevice.SyslogRelayClient) *syslogRelay {
 type syslogRelay struct {
 	client *libimobiledevice.SyslogRelayClient
 
-	reader *bufio.Reader
-	stop   chan bool
+	reader    *bufio.Reader
+	stop      chan bool
+	isReading bool
 }
 
 func (r *syslogRelay) Lines() <-chan string {
 	out := make(chan string)
+	r.isReading = true
 
 	go func() {
+		defer func() {
+			close(out)
+			r.isReading = false
+		}()
 		for {
 			select {
 			case <-r.stop:
-				close(out)
 				return
 			default:
 				bs, err := r.readLine()
@@ -54,7 +60,9 @@ func (r *syslogRelay) Lines() <-chan string {
 }
 
 func (r *syslogRelay) Stop() {
-	r.stop <- true
+	if r.isReading {
+		r.stop <- true
+	}
 }
 
 func (r *syslogRelay) readLine() ([]byte, error) {

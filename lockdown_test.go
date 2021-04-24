@@ -53,6 +53,7 @@ func Test_lockdown_SyslogRelayService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	syslogRelaySrv.Stop()
 
 	lines := syslogRelaySrv.Lines()
 
