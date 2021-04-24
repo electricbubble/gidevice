@@ -457,12 +457,11 @@ func (d *device) Syslog() (lines <-chan string, err error) {
 	return d.syslogRelay.Lines(), nil
 }
 
-func (d *device) SyslogStop() (err error) {
-	if _, err = d.syslogRelayService(); err != nil {
-		return err
+func (d *device) SyslogStop() {
+	if d.syslogRelay == nil {
+		return
 	}
 	d.syslogRelay.Stop()
-	return nil
 }
 
 func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error) {

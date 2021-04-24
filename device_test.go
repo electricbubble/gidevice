@@ -118,6 +118,8 @@ func Test_device_AppUninstall(t *testing.T) {
 func Test_device_Syslog(t *testing.T) {
 	setupLockdownSrv(t)
 
+	dev.SyslogStop()
+
 	lines, err := dev.Syslog()
 	if err != nil {
 		t.Fatal(err)
@@ -137,9 +139,6 @@ func Test_device_Syslog(t *testing.T) {
 
 	// <-done
 	time.Sleep(3 * time.Second)
-	err = dev.SyslogStop()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dev.SyslogStop()
 	time.Sleep(200 * time.Millisecond)
 }

@@ -59,7 +59,7 @@ type Device interface {
 
 	syslogRelayService() (syslogRelay SyslogRelay, err error)
 	Syslog() (lines <-chan string, err error)
-	SyslogStop() (err error)
+	SyslogStop()
 
 	XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error)
 }
