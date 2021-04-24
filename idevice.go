@@ -57,6 +57,10 @@ type Device interface {
 
 	HouseArrestService() (houseArrest HouseArrest, err error)
 
+	syslogRelayService() (syslogRelay SyslogRelay, err error)
+	Syslog() (lines <-chan string, err error)
+	SyslogStop() (err error)
+
 	XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error)
 }
 
@@ -83,6 +87,7 @@ type Lockdown interface {
 	TestmanagerdService() (testmanagerd Testmanagerd, err error)
 	AfcService() (afc Afc, err error)
 	HouseArrestService() (houseArrest HouseArrest, err error)
+	SyslogRelayService() (syslogRelay SyslogRelay, err error)
 }
 
 type ImageMounter interface {
@@ -175,6 +180,11 @@ type XCTestManagerDaemon interface {
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 	close()
+}
+
+type SyslogRelay interface {
+	Lines() <-chan string
+	Stop()
 }
 
 type InnerConn = libimobiledevice.InnerConn

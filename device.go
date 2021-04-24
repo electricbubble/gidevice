@@ -41,6 +41,7 @@ type device struct {
 	instruments       Instruments
 	afc               Afc
 	houseArrest       HouseArrest
+	syslogRelay       SyslogRelay
 }
 
 func (d *device) Properties() DeviceProperties {
@@ -433,6 +434,35 @@ func (d *device) HouseArrestService() (houseArrest HouseArrest, err error) {
 	}
 	houseArrest = d.houseArrest
 	return
+}
+
+func (d *device) syslogRelayService() (syslogRelay SyslogRelay, err error) {
+	if d.syslogRelay != nil {
+		return d.syslogRelay, nil
+	}
+	if _, err = d.lockdownService(); err != nil {
+		return nil, err
+	}
+	if d.syslogRelay, err = d.lockdown.SyslogRelayService(); err != nil {
+		return nil, err
+	}
+	syslogRelay = d.syslogRelay
+	return
+}
+
+func (d *device) Syslog() (lines <-chan string, err error) {
+	if _, err = d.syslogRelayService(); err != nil {
+		return nil, err
+	}
+	return d.syslogRelay.Lines(), nil
+}
+
+func (d *device) SyslogStop() (err error) {
+	if _, err = d.syslogRelayService(); err != nil {
+		return err
+	}
+	d.syslogRelay.Stop()
+	return nil
 }
 
 func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error) {

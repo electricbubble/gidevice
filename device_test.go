@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"testing"
+	"time"
 )
 
 var dev Device
@@ -112,4 +113,33 @@ func Test_device_AppUninstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func Test_device_Syslog(t *testing.T) {
+	setupLockdownSrv(t)
+
+	lines, err := dev.Syslog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan os.Signal, 1)
+
+	go func() {
+		for line := range lines {
+			fmt.Println(line)
+		}
+		done <- os.Interrupt
+		t.Log("DONE!!!")
+	}()
+
+	signal.Notify(done, os.Interrupt, os.Kill)
+
+	// <-done
+	time.Sleep(3 * time.Second)
+	err = dev.SyslogStop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
 }

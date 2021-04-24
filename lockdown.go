@@ -437,6 +437,16 @@ func (c *lockdown) HouseArrestService() (houseArrest HouseArrest, err error) {
 	return
 }
 
+func (c *lockdown) SyslogRelayService() (syslogRelay SyslogRelay, err error) {
+	var innerConn InnerConn
+	if innerConn, err = c._startService(libimobiledevice.SyslogRelayServiceName, nil); err != nil {
+		return nil, err
+	}
+	syslogRelayClient := libimobiledevice.NewSyslogRelayClient(innerConn)
+	syslogRelay = newSyslogRelay(syslogRelayClient)
+	return
+}
+
 func (c *lockdown) _startService(serviceName string, escrowBag []byte) (innerConn InnerConn, err error) {
 	if err = c.handshake(); err != nil {
 		return nil, err
@@ -455,7 +465,7 @@ func (c *lockdown) _startService(serviceName string, escrowBag []byte) (innerCon
 		return nil, err
 	}
 
-	if innerConn, err = c.dev.NewConnect(dynamicPort); err != nil {
+	if innerConn, err = c.dev.NewConnect(dynamicPort, 0); err != nil {
 		return nil, err
 	}
 	// clean deadline

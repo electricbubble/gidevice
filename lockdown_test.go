@@ -1,7 +1,11 @@
 package giDevice
 
 import (
+	"fmt"
+	"os"
+	"os/signal"
 	"testing"
+	"time"
 )
 
 var lockdownSrv Lockdown
@@ -40,4 +44,31 @@ func Test_lockdown_GetValue(t *testing.T) {
 	}
 
 	t.Log(v)
+}
+
+func Test_lockdown_SyslogRelayService(t *testing.T) {
+	setupLockdownSrv(t)
+
+	syslogRelaySrv, err := lockdownSrv.SyslogRelayService()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := syslogRelaySrv.Lines()
+
+	done := make(chan os.Signal, 1)
+
+	go func() {
+		for line := range lines {
+			fmt.Println(line)
+		}
+		done <- os.Interrupt
+		fmt.Println("DONE!!!")
+	}()
+
+	signal.Notify(done, os.Interrupt, os.Kill)
+
+	<-done
+	syslogRelaySrv.Stop()
+	time.Sleep(time.Second)
 }
