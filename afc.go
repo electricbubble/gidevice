@@ -116,6 +116,9 @@ func (c *afc) Open(filename string, mode AfcFileMode) (file *AfcFile, err error)
 	if respMsg, err = c.client.Receive(); err != nil {
 		return nil, fmt.Errorf("afc receive 'Open': %w", err)
 	}
+	if err = respMsg.Err(); err != nil {
+		return nil, fmt.Errorf("afc 'Open': %w", err)
+	}
 
 	if respMsg.Operation != libimobiledevice.AfcOperationFileOpenResult {
 		return nil, fmt.Errorf("afc operation mistake 'Open': '%d'", respMsg.Operation)
@@ -280,6 +283,21 @@ func (c *afc) RemoveAll(path string) (err error) {
 		return fmt.Errorf("afc 'RemoveAll': %w", err)
 	}
 
+	return
+}
+
+func (c *afc) WriteFile(filename string, data []byte, perm AfcFileMode) (err error) {
+	var file *AfcFile
+	if file, err = c.Open(filename, perm); err != nil {
+		return err
+	}
+	defer func() {
+		err = file.Close()
+	}()
+
+	if _, err = file.Write(data); err != nil {
+		return err
+	}
 	return
 }
 

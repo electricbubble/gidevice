@@ -10,7 +10,7 @@ import (
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
-	"io/ioutil"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -42,6 +42,7 @@ type device struct {
 	afc               Afc
 	houseArrest       HouseArrest
 	syslogRelay       SyslogRelay
+	crashReportMover  CrashReportMover
 }
 
 func (d *device) Properties() DeviceProperties {
@@ -394,17 +395,12 @@ func (d *device) AppInstall(ipaPath string) (err error) {
 
 	installationPath := path.Join(stagingPath, fmt.Sprintf("%s.ipa", bundleID))
 
-	var file *AfcFile
-	if file, err = d.afc.Open(installationPath, AfcFileModeWr); err != nil {
+	var data []byte
+	if data, err = os.ReadFile(ipaPath); err != nil {
 		return err
 	}
-
-	if data, err := ioutil.ReadFile(ipaPath); err != nil {
+	if err = d.afc.WriteFile(installationPath, data, AfcFileModeWr); err != nil {
 		return err
-	} else {
-		if _, err := file.Write(data); err != nil {
-			return err
-		}
 	}
 
 	if _, err = d.installationProxyService(); err != nil {
@@ -462,6 +458,27 @@ func (d *device) SyslogStop() {
 		return
 	}
 	d.syslogRelay.Stop()
+}
+
+func (d *device) crashReportMoverService() (crashReportMover CrashReportMover, err error) {
+	if d.crashReportMover != nil {
+		return d.crashReportMover, nil
+	}
+	if _, err = d.lockdownService(); err != nil {
+		return nil, err
+	}
+	if d.crashReportMover, err = d.lockdown.CrashReportMoverService(); err != nil {
+		return nil, err
+	}
+	crashReportMover = d.crashReportMover
+	return
+}
+
+func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error) {
+	if _, err = d.crashReportMoverService(); err != nil {
+		return err
+	}
+	return d.crashReportMover.Move(hostDir, opts...)
 }
 
 func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error) {
@@ -690,11 +707,7 @@ func (d *device) _uploadXCTestConfiguration(bundleID string, sessionId uuid.UUID
 		return "", err
 	}
 
-	var file *AfcFile
-	if file, err = appAfc.Open(pathXCTestCfg, AfcFileModeWr); err != nil {
-		return "", err
-	}
-	if _, err = file.Write(content); err != nil {
+	if err = appAfc.WriteFile(pathXCTestCfg, content, AfcFileModeWr); err != nil {
 		return "", err
 	}
 

@@ -447,6 +447,26 @@ func (c *lockdown) SyslogRelayService() (syslogRelay SyslogRelay, err error) {
 	return
 }
 
+func (c *lockdown) CrashReportMoverService() (crashReportMover CrashReportMover, err error) {
+	var innerConn InnerConn
+	if innerConn, err = c._startService(libimobiledevice.CrashReportMoverServiceName, nil); err != nil {
+		return nil, err
+	}
+
+	mover := newCrashReportMover(libimobiledevice.NewCrashReportMoverClient(innerConn))
+	if err = mover.readPing(); err != nil {
+		return nil, err
+	}
+
+	if innerConn, err = c._startService(libimobiledevice.CrashReportCopyMobileServiceName, nil); err != nil {
+		return nil, err
+	}
+	mover.afc = newAfc(libimobiledevice.NewAfcClient(innerConn))
+
+	crashReportMover = mover
+	return
+}
+
 func (c *lockdown) _startService(serviceName string, escrowBag []byte) (innerConn InnerConn, err error) {
 	if err = c.handshake(); err != nil {
 		return nil, err

@@ -84,6 +84,9 @@ func Test_afc_Open(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		_ = afcFile.Close()
+	}()
 
 	userHomeDir, _ := os.UserHomeDir()
 	file, err := os.Create(userHomeDir + "/Desktop/tmp.jpeg")

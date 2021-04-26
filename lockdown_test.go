@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path"
 	"testing"
 	"time"
 )
@@ -72,4 +73,32 @@ func Test_lockdown_SyslogRelayService(t *testing.T) {
 	<-done
 	syslogRelaySrv.Stop()
 	time.Sleep(time.Second)
+}
+
+func Test_lockdown_CrashReportMoverService(t *testing.T) {
+	setupLockdownSrv(t)
+
+	crashReportMoverSrv, err := lockdownSrv.CrashReportMoverService()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filenames := make([]string, 0, 36)
+	fn := func(cwd string, info *AfcFileInfo) {
+		if cwd == "." {
+			cwd = ""
+		}
+		filenames = append(filenames, path.Join(cwd, info.Name()))
+		// fmt.Println(path.Join(cwd, name))
+	}
+	err = crashReportMoverSrv.walkDir(".", fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, n := range filenames {
+		fmt.Println(n)
+	}
+
+	t.Log(len(filenames))
 }

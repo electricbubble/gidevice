@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"howett.net/plist"
 	"io"
-	"io/ioutil"
 	"path"
 )
 
@@ -14,6 +13,10 @@ func Info(ipaPath string) (info map[string]interface{}, err error) {
 	if reader, err = zip.OpenReader(ipaPath); err != nil {
 		return nil, err
 	}
+
+	defer func() {
+		err = reader.Close()
+	}()
 
 	for _, file := range reader.File {
 		matched, _err := path.Match("Payload/*.app/Info.plist", file.Name)
@@ -29,7 +32,7 @@ func Info(ipaPath string) (info map[string]interface{}, err error) {
 		if rd, _err = file.Open(); _err != nil {
 			return nil, _err
 		}
-		data, _err := ioutil.ReadAll(rd)
+		data, _err := io.ReadAll(rd)
 		if _err != nil {
 			return nil, _err
 		}

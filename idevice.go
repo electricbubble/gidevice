@@ -61,6 +61,9 @@ type Device interface {
 	Syslog() (lines <-chan string, err error)
 	SyslogStop()
 
+	crashReportMoverService() (crashReportMover CrashReportMover, err error)
+	MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error)
+
 	XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error)
 }
 
@@ -88,6 +91,7 @@ type Lockdown interface {
 	AfcService() (afc Afc, err error)
 	HouseArrestService() (houseArrest HouseArrest, err error)
 	SyslogRelayService() (syslogRelay SyslogRelay, err error)
+	CrashReportMoverService() (crashReportMover CrashReportMover, err error)
 }
 
 type ImageMounter interface {
@@ -159,6 +163,8 @@ type Afc interface {
 	// HashWithRange sha1 algorithm with file range
 	HashWithRange(filePath string, start, end uint64) ([]byte, error)
 	RemoveAll(path string) (err error)
+
+	WriteFile(filename string, data []byte, perm AfcFileMode) (err error)
 }
 
 type HouseArrest interface {
@@ -185,6 +191,11 @@ type XCTestManagerDaemon interface {
 type SyslogRelay interface {
 	Lines() <-chan string
 	Stop()
+}
+
+type CrashReportMover interface {
+	Move(hostDir string, opts ...CrashReportMoverOption) (err error)
+	walkDir(dirname string, fn func(path string, info *AfcFileInfo)) (err error)
 }
 
 type InnerConn = libimobiledevice.InnerConn
@@ -318,6 +329,39 @@ type Process struct {
 	Pid           int       `json:"pid"`
 	RealAppName   string    `json:"realAppName"`
 	StartDate     time.Time `json:"startDate"`
+}
+
+type crashReportMoverOption struct {
+	whenDone func(filename string)
+	keep     bool
+	extract  bool
+}
+
+func defaultCrashReportMoverOption() *crashReportMoverOption {
+	return &crashReportMoverOption{
+		whenDone: func(filename string) {},
+		keep:     false,
+	}
+}
+
+type CrashReportMoverOption func(opt *crashReportMoverOption)
+
+func WithKeepCrashReport(b bool) CrashReportMoverOption {
+	return func(opt *crashReportMoverOption) {
+		opt.keep = b
+	}
+}
+
+func WithExtractRawCrashReport(b bool) CrashReportMoverOption {
+	return func(opt *crashReportMoverOption) {
+		opt.extract = b
+	}
+}
+
+func WithWhenMoveIsDone(whenDone func(filename string)) CrashReportMoverOption {
+	return func(opt *crashReportMoverOption) {
+		opt.whenDone = whenDone
+	}
 }
 
 func _removeDuplicate(strSlice []string) []string {
