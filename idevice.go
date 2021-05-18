@@ -64,7 +64,7 @@ type Device interface {
 	crashReportMoverService() (crashReportMover CrashReportMover, err error)
 	MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error)
 
-	XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error)
+	XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -132,6 +132,9 @@ type Instruments interface {
 
 	notifyOfPublishedCapabilities() (err error)
 	requestChannel(channel string) (id uint32, err error)
+
+	// sysMonSetConfig(cfg ...interface{}) (err error)
+	// SysMonStart(cfg ...interface{}) (_ interface{}, err error)
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 }
@@ -361,6 +364,40 @@ func WithExtractRawCrashReport(b bool) CrashReportMoverOption {
 func WithWhenMoveIsDone(whenDone func(filename string)) CrashReportMoverOption {
 	return func(opt *crashReportMoverOption) {
 		opt.whenDone = whenDone
+	}
+}
+
+type xcTestOption struct {
+	appEnv  map[string]interface{}
+	appArgs []interface{}
+	appOpt  map[string]interface{}
+}
+
+func defaultXCTestOption() *xcTestOption {
+	return &xcTestOption{
+		appEnv:  make(map[string]interface{}),
+		appArgs: make([]interface{}, 0, 2),
+		appOpt:  make(map[string]interface{}),
+	}
+}
+
+type XCTestOption func(opt *xcTestOption)
+
+func WithXCTestEnv(env map[string]interface{}) XCTestOption {
+	return func(opt *xcTestOption) {
+		opt.appEnv = env
+	}
+}
+
+// func WithXCTestArgs(args []interface{}) XCTestOption {
+// 	return func(opt *xcTestOption) {
+// 		opt.appArgs = args
+// 	}
+// }
+
+func WithXCTestOpt(appOpt map[string]interface{}) XCTestOption {
+	return func(opt *xcTestOption) {
+		opt.appOpt = appOpt
 	}
 }
 

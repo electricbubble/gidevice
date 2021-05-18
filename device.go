@@ -155,7 +155,7 @@ func (d *device) lockdownService() (lockdown Lockdown, err error) {
 	}
 
 	var innerConn InnerConn
-	if innerConn, err = d.NewConnect(LockdownPort); err != nil {
+	if innerConn, err = d.NewConnect(LockdownPort, 0); err != nil {
 		return nil, err
 	}
 	d.lockdownClient = libimobiledevice.NewLockdownClient(innerConn)
@@ -481,7 +481,12 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 	return d.crashReportMover.Move(hostDir, opts...)
 }
 
-func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.CancelFunc, err error) {
+func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {
+	xcTestOpt := defaultXCTestOption()
+	for _, fn := range opts {
+		fn(xcTestOpt)
+	}
+
 	ctx, cancelFunc := context.WithCancel(context.TODO())
 	_out := make(chan string)
 
@@ -607,6 +612,18 @@ func (d *device) XCTest(bundleID string) (out <-chan string, cancel context.Canc
 	}
 	if DeviceVersion(version...) >= DeviceVersion(12, 0, 0) {
 		appOpt["ActivateSuspended"] = uint64(1)
+	}
+
+	if len(xcTestOpt.appEnv) != 0 {
+		for k, v := range xcTestOpt.appEnv {
+			appEnv[k] = v
+		}
+	}
+
+	if len(xcTestOpt.appOpt) != 0 {
+		for k, v := range xcTestOpt.appEnv {
+			appOpt[k] = v
+		}
 	}
 
 	d.instruments.registerCallback("outputReceived:fromProcess:atTime:", func(m libimobiledevice.DTXMessageResult) {

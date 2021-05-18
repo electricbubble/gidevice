@@ -70,6 +70,7 @@ func Test_device_XCTest(t *testing.T) {
 
 	bundleID = "com.leixipaopao.WebDriverAgentRunner.xctrunner"
 	out, cancel, err := dev.XCTest(bundleID)
+	// out, cancel, err := dev.XCTest(bundleID, WithXCTestEnv(map[string]interface{}{"USE_PORT": 8222, "MJPEG_SERVER_PORT": 8333}))
 	if err != nil {
 		t.Fatal(err)
 	}
