@@ -58,6 +58,9 @@ func (c *afc) ReadDir(dirname string) (names []string, err error) {
 	if respMsg, err = c.client.Receive(); err != nil {
 		return nil, fmt.Errorf("afc receive 'ReadDir': %w", err)
 	}
+	if err = respMsg.Err(); err != nil {
+		return nil, fmt.Errorf("afc 'ReadDir': %w", err)
+	}
 
 	names = respMsg.Strings()
 	return
@@ -450,6 +453,8 @@ func (f *AfcFile) Read(b []byte) (n int, err error) {
 
 	if f.reader == nil {
 		f.reader = bytes.NewReader(respMsg.Payload)
+	} else {
+		f.reader.Reset(respMsg.Payload)
 	}
 
 	return f.reader.Read(b)
