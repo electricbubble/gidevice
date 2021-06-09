@@ -2,6 +2,7 @@ package giDevice
 
 import (
 	"context"
+
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
@@ -98,7 +99,8 @@ func (um *usbmux) Listen(devNotifier chan Device) (context.CancelFunc, error) {
 				if baseDev.MessageType != libimobiledevice.MessageTypeDeviceAdd {
 					baseDev.Properties.DeviceID = baseDev.DeviceID
 				}
-				devNotifier <- newDevice(um.client, baseDev.Properties)
+				client, _ := libimobiledevice.NewUsbmuxClient()
+				devNotifier <- newDevice(client, baseDev.Properties)
 			}
 		}
 	}(ctx)
