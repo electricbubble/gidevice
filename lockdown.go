@@ -9,12 +9,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
-	uuid "github.com/satori/go.uuid"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
+	uuid "github.com/satori/go.uuid"
 )
 
 var _ Lockdown = (*lockdown)(nil)
@@ -445,6 +446,15 @@ func (c *lockdown) SyslogRelayService() (syslogRelay SyslogRelay, err error) {
 	syslogRelayClient := libimobiledevice.NewSyslogRelayClient(innerConn)
 	syslogRelay = newSyslogRelay(syslogRelayClient)
 	return
+}
+
+func (c *lockdown) PcapdService() (pcapd Pcapd, err error) {
+	var innerConn InnerConn
+	if innerConn, err = c._startService(libimobiledevice.PcapdServiceName, nil); err != nil {
+		return nil, err
+	}
+	pcapdClient := libimobiledevice.NewPcapdClient(innerConn)
+	return newPcapdClient(pcapdClient), nil
 }
 
 func (c *lockdown) CrashReportMoverService() (crashReportMover CrashReportMover, err error) {
