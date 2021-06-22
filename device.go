@@ -5,15 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path"
+	"strings"
+	"time"
+
 	"github.com/electricbubble/gidevice/pkg/ipa"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
-	"os"
-	"path"
-	"strings"
-	"time"
 )
 
 const LockdownPort = 62078
@@ -43,6 +44,7 @@ type device struct {
 	houseArrest       HouseArrest
 	syslogRelay       SyslogRelay
 	crashReportMover  CrashReportMover
+	pcapd             Pcapd
 }
 
 func (d *device) Properties() DeviceProperties {
@@ -150,9 +152,9 @@ func (d *device) DeletePairRecord() (err error) {
 }
 
 func (d *device) lockdownService() (lockdown Lockdown, err error) {
-	if d.lockdown != nil {
-		return d.lockdown, nil
-	}
+	// if d.lockdown != nil {
+	// 	return d.lockdown, nil
+	// }
 
 	var innerConn InnerConn
 	if innerConn, err = d.NewConnect(LockdownPort, 0); err != nil {
@@ -458,6 +460,34 @@ func (d *device) SyslogStop() {
 		return
 	}
 	d.syslogRelay.Stop()
+}
+
+func (d *device) PcapdService() (pcapd Pcapd, err error) {
+	// if d.pcapd != nil {
+	// 	return d.pcapd, nil
+	// }
+	if _, err = d.lockdownService(); err != nil {
+		return nil, err
+	}
+	if d.pcapd, err = d.lockdown.PcapdService(); err != nil {
+		return nil, err
+	}
+	pcapd = d.pcapd
+	return
+}
+
+func (d *device) Pcap() (lines <-chan []byte, err error) {
+	if _, err = d.PcapdService(); err != nil {
+		return nil, err
+	}
+	return d.pcapd.Packet(), nil
+}
+
+func (d *device) PcapStop() {
+	if d.pcapd == nil {
+		return
+	}
+	d.pcapd.Stop()
 }
 
 func (d *device) crashReportMoverService() (crashReportMover CrashReportMover, err error) {

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
-	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	"log"
 	"time"
+
+	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
+	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 )
 
 type Usbmux interface {
@@ -60,6 +61,10 @@ type Device interface {
 	syslogRelayService() (syslogRelay SyslogRelay, err error)
 	Syslog() (lines <-chan string, err error)
 	SyslogStop()
+
+	PcapdService() (pcapd Pcapd, err error)
+	Pcap() (packet <-chan []byte, err error)
+	PcapStop()
 
 	crashReportMoverService() (crashReportMover CrashReportMover, err error)
 	MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error)
@@ -196,6 +201,10 @@ type SyslogRelay interface {
 	Stop()
 }
 
+type Pcapd interface {
+	Packet() <-chan []byte
+	Stop()
+}
 type CrashReportMover interface {
 	Move(hostDir string, opts ...CrashReportMoverOption) (err error)
 	walkDir(dirname string, fn func(path string, info *AfcFileInfo)) (err error)
