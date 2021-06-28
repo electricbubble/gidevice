@@ -100,7 +100,7 @@ func (c *PcapdClient) CreatePacket(packet []byte) ([]byte, error) {
 	now := time.Now()
 	phs := &PcaprecHdrS{
 		int(now.Unix()),
-		int(now.UnixNano() / 1e6),
+		int(now.UnixNano()/1e3 - now.Unix()*1e6),
 		len(packet),
 		len(packet),
 	}
