@@ -692,21 +692,17 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 			cancelFunc()
 		})
 
-		for {
-			select {
-			case <-ctx.Done():
-				tmSrv1.close()
-				tmSrv2.close()
-				xcTestManager1.close()
-				xcTestManager2.close()
-				if _err := d.AppKill(pid); _err != nil {
-					debugLog(fmt.Sprintf("xctest kill: %d", pid))
-				}
-				time.Sleep(time.Second)
-				close(_out)
-				return
-			}
+		<-ctx.Done()
+		tmSrv1.close()
+		tmSrv2.close()
+		xcTestManager1.close()
+		xcTestManager2.close()
+		if _err := d.AppKill(pid); _err != nil {
+			debugLog(fmt.Sprintf("xctest kill: %d", pid))
 		}
+		//time.Sleep(time.Second)
+		close(_out)
+		return
 	}()
 
 	return _out, cancelFunc, err
