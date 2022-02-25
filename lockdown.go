@@ -9,8 +9,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/Masterminds/semver"
 	"math/big"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +34,7 @@ type lockdown struct {
 	sessionID string
 
 	dev        *device
-	iOSVersion []int
+	iOSVersion *semver.Version
 	pairRecord *PairRecord
 }
 
@@ -372,7 +372,7 @@ func (c *lockdown) InstallationProxyService() (installationProxy InstallationPro
 
 func (c *lockdown) InstrumentsService() (instruments Instruments, err error) {
 	service := libimobiledevice.InstrumentsServiceName
-	if DeviceVersion(c.iOSVersion...) >= DeviceVersion(14, 0, 0) {
+	if !c.iOSVersion.LessThan(semver.MustParse("14.0")) {
 		service = libimobiledevice.InstrumentsSecureProxyServiceName
 	}
 
@@ -396,7 +396,7 @@ func (c *lockdown) InstrumentsService() (instruments Instruments, err error) {
 
 func (c *lockdown) TestmanagerdService() (testmanagerd Testmanagerd, err error) {
 	service := libimobiledevice.TestmanagerdServiceName
-	if DeviceVersion(c.iOSVersion...) >= DeviceVersion(14, 0, 0) {
+	if !c.iOSVersion.LessThan(semver.MustParse("14.0")) {
 		service = libimobiledevice.TestmanagerdSecureServiceName
 	}
 
@@ -509,29 +509,17 @@ func (c *lockdown) _startService(serviceName string, escrowBag []byte) (innerCon
 	return
 }
 
-func (c *lockdown) _getProductVersion() (version []int, err error) {
-	if c.iOSVersion != nil {
+func (c *lockdown) _getProductVersion() (*semver.Version, error) {
+	if c.iOSVersion.String() != "" {
 		return c.iOSVersion, nil
 	}
 
-	var devProductVersion []string
 	if lockdownValue, err := c.GetValue("", "ProductVersion"); err != nil {
-		return nil, err
+		return &semver.Version{}, err
 	} else {
-		devProductVersion = strings.Split(lockdownValue.(string), ".")
+		version, err2 := semver.NewVersion(lockdownValue.(string))
+		return version, err2
 	}
-
-	version = make([]int, len(devProductVersion))
-	for i, v := range devProductVersion {
-		version[i], _ = strconv.Atoi(v)
-	}
-
-	// if len(version) == 2 {
-	// 	version = append(version, 0)
-	// }
-	c.iOSVersion = version
-
-	return
 }
 
 func generatePairRecord(devPublicKeyPem []byte) (pairRecord *PairRecord, err error) {

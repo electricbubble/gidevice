@@ -1,5 +1,7 @@
 package libimobiledevice
 
+import "github.com/Masterminds/semver"
+
 const ProtocolVersion = "2"
 
 const LockdownPort = 62078
@@ -104,7 +106,7 @@ func (c *LockdownClient) ReceivePacket() (respPkt Packet, err error) {
 	return c.client.ReceivePacket()
 }
 
-func (c *LockdownClient) EnableSSL(version []int, pairRecord *PairRecord) (err error) {
+func (c *LockdownClient) EnableSSL(version *semver.Version, pairRecord *PairRecord) (err error) {
 	return c.client.innerConn.Handshake(version, pairRecord)
 }
 

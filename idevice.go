@@ -423,15 +423,15 @@ func _removeDuplicate(strSlice []string) []string {
 	return noRepeat
 }
 
-func DeviceVersion(version ...int) int {
-	if len(version) < 3 {
-		tmp := make([]int, 3)
-		copy(tmp, version)
-		version = tmp
-	}
-	maj, min, patch := version[0], version[1], version[2]
-	return ((maj & 0xFF) << 16) | ((min & 0xFF) << 8) | (patch & 0xFF)
-}
+//func DeviceVersion(version ...int) int {
+//	if len(version) < 3 {
+//		tmp := make([]int, 3)
+//		copy(tmp, version)
+//		version = tmp
+//	}
+//	maj, min, patch := version[0], version[1], version[2]
+//	return ((maj & 0xFF) << 16) | ((min & 0xFF) << 8) | (patch & 0xFF)
+//}
 
 var debugFlag = false
 
