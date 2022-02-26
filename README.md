@@ -1,4 +1,5 @@
 # Golang-iDevice
+
 [![go doc](https://godoc.org/github.com/electricbubble/gidevice?status.svg)](https://pkg.go.dev/github.com/electricbubble/gidevice?tab=doc#pkg-index)
 [![go report](https://goreportcard.com/badge/github.com/electricbubble/gidevice)](https://goreportcard.com/report/github.com/electricbubble/gidevice)
 [![license](https://img.shields.io/github/license/electricbubble/gidevice)](https://github.com/electricbubble/gidevice/blob/master/LICENSE)
@@ -37,6 +38,65 @@ func main() {
 	}
 }
 
+```
+
+### GetValue
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	giDevice "github.com/electricbubble/gidevice"
+	"log"
+)
+
+type DeviceDetail struct {
+	DeviceName                string `json:"DeviceName,omitempty"`
+	DeviceColor               string `json:"DeviceColor,omitempty"`
+	DeviceClass               string `json:"DeviceClass,omitempty"`
+	ProductVersion            string `json:"ProductVersion,omitempty"`
+	ProductType               string `json:"ProductType,omitempty"`
+	ProductName               string `json:"ProductName,omitempty"`
+	ModelNumber               string `json:"ModelNumber,omitempty"`
+	SerialNumber              string `json:"SerialNumber,omitempty"`
+	SIMStatus                 string `json:"SIMStatus,omitempty"`
+	PhoneNumber               string `json:"PhoneNumber,omitempty"`
+	CPUArchitecture           string `json:"CPUArchitecture,omitempty"`
+	ProtocolVersion           string `json:"ProtocolVersion,omitempty"`
+	RegionInfo                string `json:"RegionInfo,omitempty"`
+	TelephonyCapability       bool   `json:"TelephonyCapability,omitempty"`
+	TimeZone                  string `json:"TimeZone,omitempty"`
+	UniqueDeviceID            string `json:"UniqueDeviceID,omitempty"`
+	WiFiAddress               string `json:"WiFiAddress,omitempty"`
+	WirelessBoardSerialNumber string `json:"WirelessBoardSerialNumber,omitempty"`
+	BluetoothAddress          string `json:"BluetoothAddress,omitempty"`
+	BuildVersion              string `json:"BuildVersion,omitempty"`
+}
+
+func main() {
+	usbmux, err := giDevice.NewUsbmux()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	devices, err := usbmux.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(devices) == 0 {
+		log.Fatal("No Device")
+	}
+
+	d := devices[0]
+
+	data, _ := json.Marshal(d)
+	d1 := &DeviceDetail{}
+	json.Unmarshal(data, d1)
+	fmt.Println(d1)
+}
 ```
 
 #### DeveloperDiskImage
@@ -301,6 +361,79 @@ func main() {
 	log.Println("DONE")
 }
 
+```
+
+#### Connect and Forward
+
+```go
+package main
+
+import (
+	"fmt"
+	giDevice "github.com/electricbubble/gidevice"
+	"io"
+	"log"
+	"net"
+	"os"
+	"os/signal"
+	"time"
+	"syscall"
+)
+
+func main() {
+	usbmux, err := giDevice.NewUsbmux()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	devices, err := usbmux.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(devices) == 0 {
+		log.Fatal("No Device")
+	}
+
+	d := devices[0]
+
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", 8100))
+
+	go func(listener net.Listener) {
+		for {
+			var accept net.Conn
+			if accept, err = listener.Accept(); err != nil {
+				log.Println("accept:", err)
+			}
+
+			fmt.Println("accept", accept.RemoteAddr())
+
+			rInnerConn, err := d.NewConnect(8100)
+			log.Println(err)
+			os.Exit(0)
+
+			rConn := rInnerConn.RawConn()
+			_ = rConn.SetDeadline(time.Time{})
+
+			go func(lConn net.Conn) {
+				go func(lConn, rConn net.Conn) {
+					if _, err := io.Copy(lConn, rConn); err != nil {
+						//do sth
+					}
+				}(lConn, rConn)
+				go func(lConn, rConn net.Conn) {
+					if _, err := io.Copy(rConn, lConn); err != nil {
+						//do sth
+					}
+				}(lConn, rConn)
+			}(accept)
+		}
+	}(listener)
+
+	done := make(chan os.Signal, syscall.SIGTERM)
+	signal.Notify(done, os.Interrupt, os.Kill)
+	<-done
+}
 ```
 
 ## Thanks
