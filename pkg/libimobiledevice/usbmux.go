@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
-	giDevice "github.com/electricbubble/gidevice"
+	"github.com/electricbubble/gidevice/pkg/tool"
 	"howett.net/plist"
 	"net"
 	"runtime"
@@ -281,7 +281,7 @@ func rawDial(timeout time.Duration) (net.Conn, error) {
 type InnerConn interface {
 	Write(data []byte) (err error)
 	Read(length int) (data []byte, err error)
-	Handshake(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error)
+	Handshake(version string, pairRecord *PairRecord) (err error)
 	DismissSSL() (err error)
 	Close()
 	RawConn() net.Conn
@@ -348,11 +348,11 @@ func (c *safeConn) Read(length int) (data []byte, err error) {
 	return
 }
 
-func (c *safeConn) Handshake(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error) {
+func (c *safeConn) Handshake(version string, pairRecord *PairRecord) (err error) {
 	minVersion := uint16(tls.VersionTLS11)
 	maxVersion := uint16(tls.VersionTLS11)
 
-	if version.GreaterThan("10") {
+	if tool.GreaterThan(version,"10") {
 		minVersion = tls.VersionTLS11
 		maxVersion = tls.VersionTLS13
 	}

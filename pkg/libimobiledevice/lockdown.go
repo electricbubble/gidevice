@@ -1,9 +1,5 @@
 package libimobiledevice
 
-import (
-	giDevice "github.com/electricbubble/gidevice"
-)
-
 const ProtocolVersion = "2"
 
 const LockdownPort = 62078
@@ -108,7 +104,7 @@ func (c *LockdownClient) ReceivePacket() (respPkt Packet, err error) {
 	return c.client.ReceivePacket()
 }
 
-func (c *LockdownClient) EnableSSL(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error) {
+func (c *LockdownClient) EnableSSL(version string, pairRecord *PairRecord) (err error) {
 	return c.client.innerConn.Handshake(version, pairRecord)
 }
 

@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/electricbubble/gidevice/pkg/tool"
 	"math/big"
 	"strings"
 	"time"
@@ -33,12 +34,8 @@ type lockdown struct {
 	sessionID string
 
 	dev        *device
-	iOSVersion *IOSVersion
+	iOSVersion string
 	pairRecord *PairRecord
-}
-
-type IOSVersion struct {
-	version string
 }
 
 func (c *lockdown) QueryType() (LockdownType, error) {
@@ -375,7 +372,7 @@ func (c *lockdown) InstallationProxyService() (installationProxy InstallationPro
 
 func (c *lockdown) InstrumentsService() (instruments Instruments, err error) {
 	service := libimobiledevice.InstrumentsServiceName
-	if !c.iOSVersion.LessThan("14.0") {
+	if !tool.LessThan(c.iOSVersion,"14.0") {
 		service = libimobiledevice.InstrumentsSecureProxyServiceName
 	}
 
@@ -399,7 +396,7 @@ func (c *lockdown) InstrumentsService() (instruments Instruments, err error) {
 
 func (c *lockdown) TestmanagerdService() (testmanagerd Testmanagerd, err error) {
 	service := libimobiledevice.TestmanagerdServiceName
-	if !c.iOSVersion.LessThan("14.0") {
+	if !tool.LessThan(c.iOSVersion,"14.0") {
 		service = libimobiledevice.TestmanagerdSecureServiceName
 	}
 
@@ -512,16 +509,16 @@ func (c *lockdown) _startService(serviceName string, escrowBag []byte) (innerCon
 	return
 }
 
-func (c *lockdown) _getProductVersion() (*IOSVersion, error) {
-	if c.iOSVersion.version != "" {
+func (c *lockdown) _getProductVersion() (string, error) {
+	if c.iOSVersion != "" {
 		return c.iOSVersion, nil
 	}
 
 	if lockdownValue, err := c.GetValue("", "ProductVersion"); err != nil {
-		return &IOSVersion{}, err
+		return "", err
 	} else {
 		version, _ := lockdownValue.(string)
-		return &IOSVersion{version: version}, nil
+		return version, nil
 	}
 }
 

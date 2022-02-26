@@ -6,7 +6,7 @@ import (
 
 var _ Testmanagerd = (*testmanagerd)(nil)
 
-func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion *IOSVersion) *testmanagerd {
+func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion string) *testmanagerd {
 	return &testmanagerd{
 		client:     client,
 		iOSVersion: iOSVersion,
@@ -15,7 +15,7 @@ func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion *IO
 
 type testmanagerd struct {
 	client     *libimobiledevice.TestmanagerdClient
-	iOSVersion *IOSVersion
+	iOSVersion string
 }
 
 func (t *testmanagerd) notifyOfPublishedCapabilities() (err error) {

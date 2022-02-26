@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/electricbubble/gidevice/pkg/tool"
 	"os"
 	"path"
 	"strings"
@@ -532,11 +533,11 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		return _out, cancelFunc, err
 	}
 
-	var version *IOSVersion
-	if version, err = d.lockdown._getProductVersion(); err != nil {
+	var iOSVersion string
+	if iOSVersion, err = d.lockdown._getProductVersion(); err != nil {
 		return _out, cancelFunc, err
 	}
-	if !version.LessThan("11.0") {
+	if !tool.LessThan(iOSVersion,"11.0") {
 		if err = xcTestManager1.initiateControlSession(xcodeVersion); err != nil {
 			return _out, cancelFunc, err
 		}
@@ -628,7 +629,7 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		"USE_PORT":                 "",
 		"LLVM_PROFILE_FILE":        appContainer + "/tmp/%p.profraw",
 	}
-	if !version.LessThan("11.0") {
+	if !tool.LessThan(iOSVersion,"11.0") {
 		appEnv["DYLD_INSERT_LIBRARIES"] = "/Developer/usr/lib/libMainThreadChecker.dylib"
 		appEnv["OS_ACTIVITY_DT_MODE"] = "YES"
 	}
@@ -639,7 +640,7 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 	appOpt := map[string]interface{}{
 		"StartSuspendedKey": uint64(0),
 	}
-	if !version.LessThan("12.0") {
+	if !tool.LessThan(iOSVersion,"12.0") {
 		appOpt["ActivateSuspended"] = uint64(1)
 	}
 
@@ -675,9 +676,9 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		return _out, cancelFunc, err
 	}
 
-	if !version.LessThan("12.0") {
+	if !tool.LessThan(iOSVersion,"12.0") {
 		err = xcTestManager1.authorizeTestSession(pid)
-	} else if !version.GreaterThan("9.0") {
+	} else if !tool.GreaterThan(iOSVersion,"9.0") {
 		err = xcTestManager1.initiateControlSessionForTestProcessID(pid)
 	} else {
 		err = xcTestManager1.initiateControlSessionForTestProcessIDProtocolVersion(pid, xcodeVersion)
