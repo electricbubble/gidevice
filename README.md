@@ -92,7 +92,12 @@ func main() {
 
 	d := devices[0]
 
-	data, _ := json.Marshal(d)
+	detail, err1 := d.GetValue("","")
+	if err1 != nil {
+		fmt.Errorf("get %s device detail fail : %w", d.Properties().SerialNumber, err1)
+	}
+	
+	data, _ := json.Marshal(detail)
 	d1 := &DeviceDetail{}
 	json.Unmarshal(data, d1)
 	fmt.Println(d1)
