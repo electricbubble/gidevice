@@ -92,11 +92,11 @@ func main() {
 
 	d := devices[0]
 
-	detail, err1 := d.GetValue("","")
+	detail, err1 := d.GetValue("", "")
 	if err1 != nil {
 		fmt.Errorf("get %s device detail fail : %w", d.Properties().SerialNumber, err1)
 	}
-	
+
 	data, _ := json.Marshal(detail)
 	d1 := &DeviceDetail{}
 	json.Unmarshal(data, d1)
@@ -402,7 +402,9 @@ func main() {
 
 	d := devices[0]
 
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", 8100))
+	localPort, remotePort := 8100, 8100
+
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", localPort))
 
 	go func(listener net.Listener) {
 		for {
@@ -413,9 +415,11 @@ func main() {
 
 			fmt.Println("accept", accept.RemoteAddr())
 
-			rInnerConn, err := d.NewConnect(8100)
-			log.Println(err)
-			os.Exit(0)
+			rInnerConn, err := d.NewConnect(remotePort)
+			if err != nil {
+				log.Println(err)
+				os.Exit(0)
+			}
 
 			rConn := rInnerConn.RawConn()
 			_ = rConn.SetDeadline(time.Time{})
