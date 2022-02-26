@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
-	"github.com/Masterminds/semver"
+	giDevice "github.com/electricbubble/gidevice"
 	"howett.net/plist"
 	"net"
 	"runtime"
@@ -281,7 +281,7 @@ func rawDial(timeout time.Duration) (net.Conn, error) {
 type InnerConn interface {
 	Write(data []byte) (err error)
 	Read(length int) (data []byte, err error)
-	Handshake(version *semver.Version, pairRecord *PairRecord) (err error)
+	Handshake(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error)
 	DismissSSL() (err error)
 	Close()
 	RawConn() net.Conn
@@ -348,11 +348,11 @@ func (c *safeConn) Read(length int) (data []byte, err error) {
 	return
 }
 
-func (c *safeConn) Handshake(version *semver.Version, pairRecord *PairRecord) (err error) {
+func (c *safeConn) Handshake(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error) {
 	minVersion := uint16(tls.VersionTLS11)
 	maxVersion := uint16(tls.VersionTLS11)
 
-	if version.GreaterThan(semver.MustParse("10")) {
+	if version.GreaterThan("10") {
 		minVersion = tls.VersionTLS11
 		maxVersion = tls.VersionTLS13
 	}

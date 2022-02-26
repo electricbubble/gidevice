@@ -1,6 +1,8 @@
 package libimobiledevice
 
-import "github.com/Masterminds/semver"
+import (
+	giDevice "github.com/electricbubble/gidevice"
+)
 
 const ProtocolVersion = "2"
 
@@ -106,7 +108,7 @@ func (c *LockdownClient) ReceivePacket() (respPkt Packet, err error) {
 	return c.client.ReceivePacket()
 }
 
-func (c *LockdownClient) EnableSSL(version *semver.Version, pairRecord *PairRecord) (err error) {
+func (c *LockdownClient) EnableSSL(version *giDevice.IOSVersion, pairRecord *PairRecord) (err error) {
 	return c.client.innerConn.Handshake(version, pairRecord)
 }
 

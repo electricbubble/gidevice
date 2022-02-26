@@ -1,13 +1,12 @@
 package giDevice
 
 import (
-	"github.com/Masterminds/semver"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
 var _ Testmanagerd = (*testmanagerd)(nil)
 
-func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion *semver.Version) *testmanagerd {
+func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion *IOSVersion) *testmanagerd {
 	return &testmanagerd{
 		client:     client,
 		iOSVersion: iOSVersion,
@@ -16,7 +15,7 @@ func newTestmanagerd(client *libimobiledevice.TestmanagerdClient, iOSVersion *se
 
 type testmanagerd struct {
 	client     *libimobiledevice.TestmanagerdClient
-	iOSVersion *semver.Version
+	iOSVersion *IOSVersion
 }
 
 func (t *testmanagerd) notifyOfPublishedCapabilities() (err error) {
