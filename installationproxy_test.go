@@ -36,8 +36,12 @@ func Test_installationProxy_Browse(t *testing.T) {
 	t.Log(len(currentList))
 
 	for _, cl := range currentList {
-		app := cl.(map[string]interface{})
-		t.Log(app)
+		app, ok := cl.(map[string]interface{})
+		if ok {
+			t.Log(app)
+		} else {
+			t.Log(cl)
+		}
 	}
 }
 
