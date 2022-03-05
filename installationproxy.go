@@ -47,11 +47,18 @@ func (p *installationProxy) Browse(opts ...InstallationProxyOption) (currentList
 	if err = respPkt.Unmarshal(&reply); err != nil {
 		return nil, err
 	}
-	if reply.Status != "BrowsingApplications" {
-		return nil, fmt.Errorf("installation proxy 'Browse' status: %s", reply.Status)
-	}
 
 	currentList = reply.CurrentList
+
+	for reply.Status != "Complete" {
+		if respPkt, err = p.client.ReceivePacket(); err != nil {
+			return nil, err
+		}
+		if err = respPkt.Unmarshal(&reply); err != nil {
+			return nil, err
+		}
+		currentList = append(currentList, reply.CurrentList)
+	}
 	return
 }
 
