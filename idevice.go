@@ -66,6 +66,9 @@ type Device interface {
 	Pcap() (packet <-chan []byte, err error)
 	PcapStop()
 
+	Reboot() error
+	Shutdown() error
+
 	crashReportMoverService() (crashReportMover CrashReportMover, err error)
 	MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error)
 
@@ -96,6 +99,7 @@ type Lockdown interface {
 	AfcService() (afc Afc, err error)
 	HouseArrestService() (houseArrest HouseArrest, err error)
 	SyslogRelayService() (syslogRelay SyslogRelay, err error)
+	DiagnosticsRelayService() (diagnostics DiagnosticsRelay, err error)
 	CrashReportMoverService() (crashReportMover CrashReportMover, err error)
 }
 
@@ -205,6 +209,12 @@ type Pcapd interface {
 	Packet() <-chan []byte
 	Stop()
 }
+
+type DiagnosticsRelay interface {
+	Reboot() error
+	Shutdown() error
+}
+
 type CrashReportMover interface {
 	Move(hostDir string, opts ...CrashReportMoverOption) (err error)
 	walkDir(dirname string, fn func(path string, info *AfcFileInfo)) (err error)
