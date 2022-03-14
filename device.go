@@ -470,18 +470,22 @@ func (d *device) Reboot() (err error) {
 	if d.diagnosticsRelay, err = d.lockdown.DiagnosticsRelayService(); err != nil {
 		return
 	}
-	d.diagnosticsRelay.Reboot()
+	if err = d.diagnosticsRelay.Reboot(); err != nil {
+		return
+	}
 	return
 }
 
-func (d *device) Shutdown() (err error){
+func (d *device) Shutdown() (err error) {
 	if _, err = d.lockdownService(); err != nil {
 		return
 	}
 	if d.diagnosticsRelay, err = d.lockdown.DiagnosticsRelayService(); err != nil {
 		return
 	}
-	d.diagnosticsRelay.Shutdown()
+	if err = d.diagnosticsRelay.Shutdown(); err != nil {
+		return
+	}
 	return
 }
 
