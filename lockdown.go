@@ -457,6 +457,17 @@ func (c *lockdown) PcapdService() (pcapd Pcapd, err error) {
 	return newPcapdClient(pcapdClient), nil
 }
 
+func (c *lockdown) DiagnosticsRelayService() (diagnostics DiagnosticsRelay, err error) {
+	var innerConn InnerConn
+	if innerConn, err = c._startService(libimobiledevice.DiagnosticsRelayServiceName, nil); err != nil {
+		return nil, err
+	}
+	diagnosticsRelayClient := libimobiledevice.NewDiagnosticsRelayClient(innerConn)
+	diagnostics = newDiagnosticsRelay(diagnosticsRelayClient)
+
+	return
+}
+
 func (c *lockdown) CrashReportMoverService() (crashReportMover CrashReportMover, err error) {
 	var innerConn InnerConn
 	if innerConn, err = c._startService(libimobiledevice.CrashReportMoverServiceName, nil); err != nil {

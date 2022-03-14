@@ -43,6 +43,7 @@ type device struct {
 	afc               Afc
 	houseArrest       HouseArrest
 	syslogRelay       SyslogRelay
+	diagnosticsRelay  DiagnosticsRelay
 	crashReportMover  CrashReportMover
 	pcapd             Pcapd
 }
@@ -460,6 +461,28 @@ func (d *device) SyslogStop() {
 		return
 	}
 	d.syslogRelay.Stop()
+}
+
+func (d *device) Reboot() (err error) {
+	if _, err = d.lockdownService(); err != nil {
+		return
+	}
+	if d.diagnosticsRelay, err = d.lockdown.DiagnosticsRelayService(); err != nil {
+		return
+	}
+	d.diagnosticsRelay.Reboot()
+	return
+}
+
+func (d *device) Shutdown() (err error){
+	if _, err = d.lockdownService(); err != nil {
+		return
+	}
+	if d.diagnosticsRelay, err = d.lockdown.DiagnosticsRelayService(); err != nil {
+		return
+	}
+	d.diagnosticsRelay.Shutdown()
+	return
 }
 
 func (d *device) PcapdService() (pcapd Pcapd, err error) {
