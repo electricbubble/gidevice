@@ -143,3 +143,13 @@ func Test_device_Syslog(t *testing.T) {
 	dev.SyslogStop()
 	time.Sleep(200 * time.Millisecond)
 }
+
+func Test_device_Reboot(t *testing.T) {
+	setupDevice(t)
+	dev.Reboot()
+}
+
+func Test_device_Shutdown(t *testing.T) {
+	setupDevice(t)
+	dev.Shutdown()
+}
