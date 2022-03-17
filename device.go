@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"io/ioutil"
 	"path"
 	"strings"
 	"time"
@@ -399,7 +399,7 @@ func (d *device) AppInstall(ipaPath string) (err error) {
 	installationPath := path.Join(stagingPath, fmt.Sprintf("%s.ipa", bundleID))
 
 	var data []byte
-	if data, err = os.ReadFile(ipaPath); err != nil {
+	if data, err = ioutil.ReadFile(ipaPath); err != nil {
 		return err
 	}
 	if err = d.afc.WriteFile(installationPath, data, AfcFileModeWr); err != nil {

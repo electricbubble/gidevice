@@ -2,8 +2,10 @@ package giDevice
 
 import (
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
+	"io/ioutil"
 	"os"
+
+	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
 var _ ImageMounter = (*imageMounter)(nil)
@@ -76,7 +78,7 @@ func (m *imageMounter) UploadImage(imgType, dmgPath string, signatureData []byte
 	}
 
 	var dmgData []byte
-	if dmgData, err = os.ReadFile(dmgPath); err != nil {
+	if dmgData, err = ioutil.ReadFile(dmgPath); err != nil {
 		return err
 	}
 
@@ -128,7 +130,7 @@ func (m *imageMounter) Mount(imgType, devImgPath string, signatureData []byte) (
 
 func (m *imageMounter) UploadImageAndMount(imgType, devImgPath, dmgPath, signaturePath string) (err error) {
 	var signatureData []byte
-	if signatureData, err = os.ReadFile(signaturePath); err != nil {
+	if signatureData, err = ioutil.ReadFile(signaturePath); err != nil {
 		return err
 	}
 	if err = m.UploadImage(imgType, dmgPath, signatureData); err != nil {
