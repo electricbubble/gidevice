@@ -62,14 +62,17 @@ func (d *device) NewConnect(port int, timeout ...time.Duration) (InnerConn, erro
 	if pkt, err = newClient.NewPlistPacket(
 		newClient.NewConnectRequest(d.properties.DeviceID, port),
 	); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
 	if err = newClient.SendPacket(pkt); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
 	if _, err = newClient.ReceivePacket(); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
