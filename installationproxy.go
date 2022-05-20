@@ -48,8 +48,6 @@ func (p *installationProxy) Browse(opts ...InstallationProxyOption) (currentList
 		return nil, err
 	}
 
-	currentList = reply.CurrentList
-
 	for reply.Status != "Complete" {
 		if respPkt, err = p.client.ReceivePacket(); err != nil {
 			return nil, err
@@ -57,8 +55,9 @@ func (p *installationProxy) Browse(opts ...InstallationProxyOption) (currentList
 		if err = respPkt.Unmarshal(&reply); err != nil {
 			return nil, err
 		}
-		currentList = append(currentList, reply.CurrentList)
 	}
+
+	currentList = reply.CurrentList
 	return
 }
 
