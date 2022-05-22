@@ -62,14 +62,17 @@ func (d *device) NewConnect(port int, timeout ...time.Duration) (InnerConn, erro
 	if pkt, err = newClient.NewPlistPacket(
 		newClient.NewConnectRequest(d.properties.DeviceID, port),
 	); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
 	if err = newClient.SendPacket(pkt); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
 	if _, err = newClient.ReceivePacket(); err != nil {
+		newClient.Close()
 		return nil, err
 	}
 
@@ -179,7 +182,19 @@ func (d *device) GetValue(domain, key string) (v interface{}, err error) {
 	if _, err = d.lockdownService(); err != nil {
 		return nil, err
 	}
-	return d.lockdown.GetValue(domain, key)
+	if d.lockdown.pairRecord == nil {
+		if err = d.lockdown.handshake(); err != nil {
+			return nil, err
+		}
+	}
+	if err = d.lockdown.startSession(d.lockdown.pairRecord); err != nil {
+		return nil, err
+	}
+	if v, err = d.lockdown.GetValue(domain, key); err != nil {
+		return nil, err
+	}
+	err = d.lockdown.stopSession()
+	return
 }
 
 func (d *device) Pair() (pairRecord *PairRecord, err error) {
@@ -727,7 +742,7 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		if _err := d.AppKill(pid); _err != nil {
 			debugLog(fmt.Sprintf("xctest kill: %d", pid))
 		}
-		//time.Sleep(time.Second)
+		// time.Sleep(time.Second)
 		close(_out)
 		return
 	}()

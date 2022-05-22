@@ -153,3 +153,22 @@ func Test_device_Shutdown(t *testing.T) {
 	setupDevice(t)
 	dev.Shutdown()
 }
+
+func Test_device_InstallationProxyBrowse(t *testing.T) {
+	setupDevice(t)
+
+	list, err := dev.InstallationProxyBrowse(
+		WithApplicationType(ApplicationTypeUser),
+		WithReturnAttributes("CFBundleDisplayName", "CFBundleIdentifier", "SequenceNumber", "SequenceNumber"),
+	)
+	// list, err := dev.InstallationProxyBrowse()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log(len(list))
+
+	for _, l := range list {
+		t.Logf("%#v", l)
+	}
+}

@@ -34,7 +34,10 @@ func Test_lockdown_QueryType(t *testing.T) {
 func Test_lockdown_GetValue(t *testing.T) {
 	setupLockdownSrv(t)
 
-	v, err := lockdownSrv.GetValue("", "")
+	// v, err := dev.GetValue("com.apple.mobile.iTunes", "")
+	// v, err := dev.GetValue("com.apple.mobile.internal", "")
+	v, err := dev.GetValue("com.apple.mobile.battery", "")
+
 	// v, err := lockdownSrv.GetValue("", "ProductVersion")
 	// v, err := lockdownSrv.GetValue("", "DeviceName")
 	// v, err := lockdownSrv.GetValue("com.apple.mobile.iTunes", "")
