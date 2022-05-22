@@ -8,6 +8,8 @@ type SpringBoardBasicRequest struct {
 	Label         string      `plist:"Label"`
 	Command       CommandType `plist:"Command"`
 	FormatVersion string      `plist:"FormatVersion"`
+	BundleId      string      `plist:"BundleId"`
+	IconState     string      `plist:"IconState"`
 }
 
 const (
