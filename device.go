@@ -44,6 +44,7 @@ type device struct {
 	houseArrest       HouseArrest
 	syslogRelay       SyslogRelay
 	diagnosticsRelay  DiagnosticsRelay
+	springBoard       SpringBoard
 	crashReportMover  CrashReportMover
 	pcapd             Pcapd
 }
@@ -502,6 +503,32 @@ func (d *device) Shutdown() (err error) {
 		return
 	}
 	return
+}
+
+func (d *device) springBoardService() (springBoard SpringBoard, err error) {
+	if d.springBoard != nil {
+		return d.springBoard, nil
+	}
+	if _, err = d.lockdownService(); err != nil {
+		return nil, err
+	}
+	if d.springBoard, err = d.lockdown.SpringBoardService(); err != nil {
+		return nil, err
+	}
+	springBoard = d.springBoard
+	return
+}
+
+func (d *device) GetIconState() error {
+
+}
+
+func (d *device) SetIconState() {
+
+}
+
+func (d *device) GetIconPNGData() {
+
 }
 
 func (d *device) PcapdService() (pcapd Pcapd, err error) {

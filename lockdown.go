@@ -468,6 +468,16 @@ func (c *lockdown) DiagnosticsRelayService() (diagnostics DiagnosticsRelay, err 
 	return
 }
 
+func (c *lockdown) SpringBoardService() (springboard SpringBoard, err error) {
+	var innerConn InnerConn
+	if innerConn, err = c._startService(libimobiledevice.SpringBoardServiceName, nil); err != nil {
+		return nil, err
+	}
+	springBoardServiceClient := libimobiledevice.NewSpringBoardClient(innerConn)
+	springboard = newSpringBoard(springBoardServiceClient)
+	return
+}
+
 func (c *lockdown) CrashReportMoverService() (crashReportMover CrashReportMover, err error) {
 	var innerConn InnerConn
 	if innerConn, err = c._startService(libimobiledevice.CrashReportMoverServiceName, nil); err != nil {
