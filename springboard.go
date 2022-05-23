@@ -17,9 +17,10 @@ type springboard struct {
 
 func (s springboard) GetIconState() (err error) {
 	var pkt libimobiledevice.Packet
-	if pkt, err = s.client.NewXmlPacket(
-		s.client.NewBasicRequest(libimobiledevice.CommandTypeGetIconState),
-	); err != nil {
+	req := map[string]interface{}{
+		"command": "getIconState",
+	}
+	if pkt, err = s.client.NewBinaryPacket(req); err != nil {
 		return
 	}
 	if err = s.client.SendPacket(pkt); err != nil {
@@ -37,6 +38,20 @@ func (s springboard) SetIconState() {
 
 }
 
-func (s springboard) GetIconPNGData() {
-
+func (s springboard) GetIconPNGData() (err error) {
+	//var pkt libimobiledevice.Packet
+	//r := s.client.NewBasicRequest(libimobiledevice.CommandTypeGetIconPNGData)
+	//r.BundleId = "com.tencent.xin"
+	//if pkt, err = s.client.NewXmlPacket(r); err != nil {
+	//	return
+	//}
+	//if err = s.client.SendPacket(pkt); err != nil {
+	//	return err
+	//}
+	//var respPkt libimobiledevice.Packet
+	//if respPkt, err = s.client.ReceivePacket(); err != nil {
+	//	return err
+	//}
+	//fmt.Println(respPkt)
+	return
 }

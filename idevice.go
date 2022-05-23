@@ -77,7 +77,7 @@ type Device interface {
 	springBoardService() (springBoard SpringBoard, err error)
 	GetIconState() error
 	SetIconState()
-	GetIconPNGData()
+	GetIconPNGData() error
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -229,7 +229,7 @@ type CrashReportMover interface {
 type SpringBoard interface {
 	GetIconState() error
 	SetIconState()
-	GetIconPNGData()
+	GetIconPNGData() error
 }
 
 type InnerConn = libimobiledevice.InnerConn

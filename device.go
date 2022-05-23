@@ -520,15 +520,24 @@ func (d *device) springBoardService() (springBoard SpringBoard, err error) {
 }
 
 func (d *device) GetIconState() error {
-
+	return nil
 }
 
 func (d *device) SetIconState() {
 
 }
 
-func (d *device) GetIconPNGData() {
-
+func (d *device) GetIconPNGData() (err error) {
+	if _, err = d.lockdownService(); err != nil {
+		return
+	}
+	if d.springBoard, err = d.lockdown.SpringBoardService(); err != nil {
+		return
+	}
+	if err = d.springBoard.GetIconPNGData(); err != nil {
+		return
+	}
+	return
 }
 
 func (d *device) PcapdService() (pcapd Pcapd, err error) {

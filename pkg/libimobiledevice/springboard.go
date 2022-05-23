@@ -1,21 +1,13 @@
 package libimobiledevice
 
-const (
-	SpringBoardServiceName = "com.apple.springboardservices"
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
 )
 
-type SpringBoardBasicRequest struct {
-	Label         string      `plist:"Label"`
-	Command       CommandType `plist:"Command"`
-	FormatVersion string      `plist:"FormatVersion"`
-	BundleId      string      `plist:"BundleId"`
-	IconState     string      `plist:"IconState"`
-}
-
 const (
-	CommandTypeGetIconState   CommandType = "GetIconState"
-	CommandTypeSetIconState   CommandType = "SetIconState"
-	CommandTypeGetIconPNGData CommandType = "GetIconPNGData"
+	SpringBoardServiceName = "com.apple.springboardservices"
 )
 
 func NewSpringBoardClient(innerConn InnerConn) *SpringBoardClient {
@@ -32,13 +24,6 @@ func (c *SpringBoardClient) InnerConn() InnerConn {
 	return c.client.innerConn
 }
 
-func (c *SpringBoardClient) NewBasicRequest(command CommandType) *SpringBoardBasicRequest {
-	return &SpringBoardBasicRequest{
-		Command: command,
-		Label:   BundleID,
-	}
-}
-
 func (c *SpringBoardClient) NewXmlPacket(req interface{}) (Packet, error) {
 	return c.client.NewXmlPacket(req)
 }
@@ -48,5 +33,39 @@ func (c *SpringBoardClient) SendPacket(pkt Packet) (err error) {
 }
 
 func (c *SpringBoardClient) ReceivePacket() (respPkt Packet, err error) {
-	return c.client.ReceivePacket()
+	var bufLen []byte
+	if bufLen, err = c.client.innerConn.Read(4); err != nil {
+		return nil, fmt.Errorf("receive packet: %w", err)
+	}
+	lenPkg := binary.BigEndian.Uint32(bufLen)
+
+	buffer := bytes.NewBuffer([]byte{})
+	buffer.Write(bufLen)
+
+	var buf []byte
+	if buf, err = c.client.innerConn.Read(int(lenPkg)); err != nil {
+		return nil, fmt.Errorf("receive packet: %w", err)
+	}
+	buffer.Write(buf)
+
+	if respPkt, err = new(servicePacket).Unpack(buffer); err != nil {
+		return nil, fmt.Errorf("receive packet: %w", err)
+	}
+
+	debugLog(fmt.Sprintf("<-- %s\n", respPkt))
+
+	var reply []interface{}
+	if err = respPkt.Unmarshal(&reply); err != nil {
+		return nil, fmt.Errorf("receive packet: %w", err)
+	}
+
+	//if reply.Error != "" {
+	//	return nil, fmt.Errorf("receive packet: %s", reply.Error)
+	//}
+
+	return
+}
+
+func (c *SpringBoardClient) NewBinaryPacket(req interface{}) (Packet, error) {
+	return c.client.NewBinaryPacket(req)
 }
