@@ -6,6 +6,10 @@ import (
 	"fmt"
 )
 
+type IconPNGDataResponse struct {
+	PNGData []byte `plist:"pngData"`
+}
+
 const (
 	SpringBoardServiceName = "com.apple.springboardservices"
 )
@@ -53,15 +57,6 @@ func (c *SpringBoardClient) ReceivePacket() (respPkt Packet, err error) {
 	}
 
 	debugLog(fmt.Sprintf("<-- %s\n", respPkt))
-
-	var reply []interface{}
-	if err = respPkt.Unmarshal(&reply); err != nil {
-		return nil, fmt.Errorf("receive packet: %w", err)
-	}
-
-	//if reply.Error != "" {
-	//	return nil, fmt.Errorf("receive packet: %s", reply.Error)
-	//}
 
 	return
 }

@@ -22,5 +22,5 @@ func setupSpringBoardSrv(t *testing.T) {
 
 func Test_springBoard(t *testing.T) {
 	setupSpringBoardSrv(t)
-	fmt.Println(springBoardSrv.GetIconState())
+	fmt.Println(springBoardSrv.GetIconPNGData())
 }

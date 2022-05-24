@@ -75,9 +75,7 @@ type Device interface {
 	XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error)
 
 	springBoardService() (springBoard SpringBoard, err error)
-	GetIconState() error
-	SetIconState()
-	GetIconPNGData() error
+	GetIconPNGData() (pngData []byte, err error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -227,9 +225,7 @@ type CrashReportMover interface {
 }
 
 type SpringBoard interface {
-	GetIconState() error
-	SetIconState()
-	GetIconPNGData() error
+	GetIconPNGData() (pngData []byte, err error)
 }
 
 type InnerConn = libimobiledevice.InnerConn
