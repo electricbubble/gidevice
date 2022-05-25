@@ -73,6 +73,9 @@ type Device interface {
 	MoveCrashReport(hostDir string, opts ...CrashReportMoverOption) (err error)
 
 	XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error)
+
+	springBoardService() (springBoard SpringBoard, err error)
+	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -101,6 +104,7 @@ type Lockdown interface {
 	SyslogRelayService() (syslogRelay SyslogRelay, err error)
 	DiagnosticsRelayService() (diagnostics DiagnosticsRelay, err error)
 	CrashReportMoverService() (crashReportMover CrashReportMover, err error)
+	SpringBoardService() (springBoard SpringBoard, err error)
 }
 
 type ImageMounter interface {
@@ -218,6 +222,10 @@ type DiagnosticsRelay interface {
 type CrashReportMover interface {
 	Move(hostDir string, opts ...CrashReportMoverOption) (err error)
 	walkDir(dirname string, fn func(path string, info *AfcFileInfo)) (err error)
+}
+
+type SpringBoard interface {
+	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 }
 
 type InnerConn = libimobiledevice.InnerConn
