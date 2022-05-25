@@ -1,7 +1,10 @@
 package giDevice
 
 import (
-	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
+	"os"
 	"testing"
 )
 
@@ -22,5 +25,23 @@ func setupSpringBoardSrv(t *testing.T) {
 
 func Test_springBoard(t *testing.T) {
 	setupSpringBoardSrv(t)
-	fmt.Println(springBoardSrv.GetIconPNGData())
+	raw, _ := springBoardSrv.GetIconPNGData("com.tencent.xin")
+	img, format, err := image.Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create("./abc." + format)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	switch format {
+	case "png":
+		err = png.Encode(file, img)
+	case "jpeg":
+		err = jpeg.Encode(file, img, nil)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 }

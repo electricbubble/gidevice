@@ -1,6 +1,7 @@
 package giDevice
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
@@ -15,11 +16,11 @@ type springboard struct {
 	client *libimobiledevice.SpringBoardClient
 }
 
-func (s springboard) GetIconPNGData() (pngData []byte, err error) {
+func (s springboard) GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error) {
 	var pkt libimobiledevice.Packet
 	req := map[string]interface{}{
 		"command":  "getIconPNGData",
-		"bundleId": "com.tencent.xin",
+		"bundleId": bundleId,
 	}
 	if pkt, err = s.client.NewBinaryPacket(req); err != nil {
 		return
@@ -32,9 +33,12 @@ func (s springboard) GetIconPNGData() (pngData []byte, err error) {
 		return nil, err
 	}
 	var reply libimobiledevice.IconPNGDataResponse
+	raw = new(bytes.Buffer)
 	if err = respPkt.Unmarshal(&reply); err != nil {
 		return nil, fmt.Errorf("receive packet: %w", err)
 	}
-	pngData = reply.PNGData
+	if _, err = raw.Write(reply.PNGData); err != nil {
+		return nil, err
+	}
 	return
 }

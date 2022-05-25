@@ -519,14 +519,14 @@ func (d *device) springBoardService() (springBoard SpringBoard, err error) {
 	return
 }
 
-func (d *device) GetIconPNGData() (pngData []byte, err error) {
+func (d *device) GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error) {
 	if _, err = d.lockdownService(); err != nil {
 		return
 	}
 	if d.springBoard, err = d.lockdown.SpringBoardService(); err != nil {
 		return
 	}
-	if pngData, err = d.springBoard.GetIconPNGData(); err != nil {
+	if raw, err = d.springBoard.GetIconPNGData(bundleId); err != nil {
 		return
 	}
 	return
