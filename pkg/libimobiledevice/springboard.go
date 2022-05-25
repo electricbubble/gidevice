@@ -1,11 +1,5 @@
 package libimobiledevice
 
-import (
-	"bytes"
-	"encoding/binary"
-	"fmt"
-)
-
 type IconPNGDataResponse struct {
 	PNGData []byte `plist:"pngData"`
 }
@@ -37,28 +31,7 @@ func (c *SpringBoardClient) SendPacket(pkt Packet) (err error) {
 }
 
 func (c *SpringBoardClient) ReceivePacket() (respPkt Packet, err error) {
-	var bufLen []byte
-	if bufLen, err = c.client.innerConn.Read(4); err != nil {
-		return nil, fmt.Errorf("receive packet: %w", err)
-	}
-	lenPkg := binary.BigEndian.Uint32(bufLen)
-
-	buffer := bytes.NewBuffer([]byte{})
-	buffer.Write(bufLen)
-
-	var buf []byte
-	if buf, err = c.client.innerConn.Read(int(lenPkg)); err != nil {
-		return nil, fmt.Errorf("receive packet: %w", err)
-	}
-	buffer.Write(buf)
-
-	if respPkt, err = new(servicePacket).Unpack(buffer); err != nil {
-		return nil, fmt.Errorf("receive packet: %w", err)
-	}
-
-	debugLog(fmt.Sprintf("<-- %s\n", respPkt))
-
-	return
+	return c.client.ReceivePacket()
 }
 
 func (c *SpringBoardClient) NewBinaryPacket(req interface{}) (Packet, error) {
