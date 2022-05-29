@@ -175,10 +175,29 @@ func (c *dtxMessageClient) ReceiveDTXMessage() (result *DTXMessageResult, err er
 	}
 
 	payloadSize := uint32(unsafe.Sizeof(*payload))
-	objOffset := payloadSize + payload.AuxiliaryLength
+	objOffset := uint64(payloadSize + payload.AuxiliaryLength)
 
-	aux := rawPayload[payloadSize : payloadSize+payload.AuxiliaryLength]
-	obj := rawPayload[objOffset : uint64(objOffset)+(payload.TotalLength-uint64(payload.AuxiliaryLength))]
+	var aux, obj []byte
+
+	// see https://github.com/electricbubble/gidevice/issues/28
+	if r, l := payloadSize+payload.AuxiliaryLength, len(rawPayload); int(r) <= l {
+		aux = rawPayload[payloadSize:r]
+	} else {
+		debugLog(fmt.Sprintf("<-- DTXMessage %s\n%s\n"+
+			"[aux] bounds out of range [:%d] with capacity %d",
+			header.String(), payload.String(),
+			r, l,
+		))
+	}
+	if r, l := objOffset+(payload.TotalLength-uint64(payload.AuxiliaryLength)), len(rawPayload); int(r) <= l {
+		obj = rawPayload[objOffset:r]
+	} else {
+		debugLog(fmt.Sprintf("<-- DTXMessage %s\n%s\n"+
+			"[obj] bounds out of range [:%d] with capacity %d",
+			header.String(), payload.String(),
+			r, l,
+		))
+	}
 
 	debugLog(fmt.Sprintf(
 		"<-- DTXMessage %s\n%s\n"+
