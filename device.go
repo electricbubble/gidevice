@@ -742,9 +742,10 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		return _out, cancelFunc, err
 	}
 
-	if err = d.instruments.startObserving(pid); err != nil {
-		return _out, cancelFunc, err
-	}
+	// see https://github.com/electricbubble/gidevice/issues/31
+	// if err = d.instruments.startObserving(pid); err != nil {
+	// 	return _out, cancelFunc, err
+	// }
 
 	if DeviceVersion(version...) >= DeviceVersion(12, 0, 0) {
 		err = xcTestManager1.authorizeTestSession(pid)
