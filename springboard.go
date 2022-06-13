@@ -43,7 +43,7 @@ func (s springboard) GetIconPNGData(bundleId string) (raw *bytes.Buffer, err err
 	return
 }
 
-func (s springboard) GetInterfaceOrientation() (orientation int64, err error) {
+func (s springboard) GetInterfaceOrientation() (orientation libimobiledevice.OrientationState, err error) {
 	var pkt libimobiledevice.Packet
 	req := map[string]interface{}{
 		"command": "getInterfaceOrientation",

@@ -532,11 +532,8 @@ func (d *device) GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error) 
 	return
 }
 
-func (d *device) GetInterfaceOrientation() (orientation int64, err error) {
-	if _, err = d.lockdownService(); err != nil {
-		return
-	}
-	if d.springBoard, err = d.lockdown.SpringBoardService(); err != nil {
+func (d *device) GetInterfaceOrientation() (orientation libimobiledevice.OrientationState, err error) {
+	if _, err = d.springBoardService(); err != nil {
 		return
 	}
 	if orientation, err = d.springBoard.GetInterfaceOrientation(); err != nil {

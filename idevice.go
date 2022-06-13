@@ -76,7 +76,7 @@ type Device interface {
 
 	springBoardService() (springBoard SpringBoard, err error)
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
-	GetInterfaceOrientation() (orientation int64, err error)
+	GetInterfaceOrientation() (orientation libimobiledevice.OrientationState, err error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -227,7 +227,7 @@ type CrashReportMover interface {
 
 type SpringBoard interface {
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
-	GetInterfaceOrientation() (orientation int64, err error)
+	GetInterfaceOrientation() (orientation libimobiledevice.OrientationState, err error)
 }
 
 type InnerConn = libimobiledevice.InnerConn
