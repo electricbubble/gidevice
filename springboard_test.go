@@ -1,6 +1,7 @@
 package giDevice
 
 import (
+	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -23,7 +24,7 @@ func setupSpringBoardSrv(t *testing.T) {
 	}
 }
 
-func Test_springBoard(t *testing.T) {
+func Test_springBoard_GetIcon(t *testing.T) {
 	setupSpringBoardSrv(t)
 	raw, _ := springBoardSrv.GetIconPNGData("com.tencent.xin")
 	img, format, err := image.Decode(raw)
@@ -44,4 +45,9 @@ func Test_springBoard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func Test_springBoard_GetOrient(t *testing.T) {
+	setupSpringBoardSrv(t)
+	fmt.Println(springBoardSrv.GetInterfaceOrientation())
 }
