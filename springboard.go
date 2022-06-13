@@ -42,3 +42,26 @@ func (s springboard) GetIconPNGData(bundleId string) (raw *bytes.Buffer, err err
 	}
 	return
 }
+
+func (s springboard) GetInterfaceOrientation() (orientation libimobiledevice.OrientationState, err error) {
+	var pkt libimobiledevice.Packet
+	req := map[string]interface{}{
+		"command": "getInterfaceOrientation",
+	}
+	if pkt, err = s.client.NewBinaryPacket(req); err != nil {
+		return
+	}
+	if err = s.client.SendPacket(pkt); err != nil {
+		return 0, err
+	}
+	var respPkt libimobiledevice.Packet
+	if respPkt, err = s.client.ReceivePacket(); err != nil {
+		return 0, err
+	}
+	var reply libimobiledevice.InterfaceOrientationResponse
+	if err = respPkt.Unmarshal(&reply); err != nil {
+		return 0, fmt.Errorf("receive packet: %w", err)
+	}
+	orientation = reply.Orientation
+	return
+}
