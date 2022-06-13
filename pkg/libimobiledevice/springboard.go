@@ -4,6 +4,10 @@ type IconPNGDataResponse struct {
 	PNGData []byte `plist:"pngData"`
 }
 
+type InterfaceOrientationResponse struct {
+	Orientation int64 `plist:"interfaceOrientation"`
+}
+
 const (
 	SpringBoardServiceName = "com.apple.springboardservices"
 )
