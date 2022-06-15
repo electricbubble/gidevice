@@ -14,8 +14,8 @@ const (
 	Unknown OrientationState = iota
 	Portrait
 	PortraitUpsideDown
-	LandscapeLeft
 	LandscapeRight
+	LandscapeLeft
 )
 
 const (
