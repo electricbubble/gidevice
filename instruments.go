@@ -1,6 +1,7 @@
 package giDevice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
@@ -255,6 +256,122 @@ func (i *instruments) DeviceInfo() (devInfo *DeviceInfo, err error) {
 
 func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult)) {
 	i.client.RegisterCallback(obj, cb)
+}
+
+func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+	var id uint32
+	_, cancelFunc := context.WithCancel(context.TODO())
+	_out := make(chan interface{})
+	if id, err = i.requestChannel("com.apple.instruments.server.services.sysmontap"); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	selector := "setConfig:"
+	args := libimobiledevice.NewAuxBuffer()
+
+	var config map[string]interface{}
+	config = make(map[string]interface{})
+	{
+		config["bm"] = 0
+		config["cpuUsage"] = true
+		// 输出所有进程信息字段，字段顺序与自定义相同（全量自字段，按需使用）
+		//config["procAttrs"] = []string{
+		//	"memVirtualSize", "cpuUsage", "procStatus", "appSleep",
+		//	"uid", "vmPageIns", "memRShrd", "ctxSwitch", "memCompressed",
+		//	"intWakeups", "cpuTotalSystem", "responsiblePID", "physFootprint",
+		//	"cpuTotalUser", "sysCallsUnix", "memResidentSize", "sysCallsMach",
+		//	"memPurgeable", "diskBytesRead", "machPortCount", "__suddenTerm", "__arch",
+		//	"memRPrvt", "msgSent", "ppid", "threadCount", "memAnon", "diskBytesWritten",
+		//	"pgid", "faults", "msgRecv", "__restricted", "pid", "__sandbox"}
+
+		config["procAttrs"] = []string{
+			"memVirtualSize", "cpuUsage", "ctxSwitch", "intWakeups",
+			"physFootprint", "memResidentSize", "memAnon", "pid"}
+
+		config["sampleInterval"] = 1000000000
+		// 系统信息字段
+		config["sysAttrs"] = []string{
+			"vmExtPageCount", "vmFreeCount", "vmPurgeableCount",
+			"vmSpeculativeCount", "physMemSize"}
+		// 刷新频率
+		config["ur"] = 1000
+	}
+
+	args.AppendObject(config)
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+	ctx, cancelFunc := context.WithCancel(context.TODO())
+	selector = "start"
+	args = libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		_out <- m.Obj
+	})
+
+	go func() {
+		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			cancelFunc()
+		})
+
+		<-ctx.Done()
+		// time.Sleep(time.Second)
+		close(_out)
+		return
+	}()
+	return _out, cancelFunc, err
+}
+
+func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+	var id uint32
+	ctx, cancelFunc := context.WithCancel(context.TODO())
+	_out := make(chan interface{})
+	if id, err = i.requestChannel("com.apple.instruments.server.services.graphics.opengl"); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	selector := "availableStatistics"
+	args := libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	selector = "setSamplingRate:"
+	if err = args.AppendObject(10); err != nil {
+		return _out, cancelFunc, err
+	}
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	selector = "startSamplingAtTimeInterval:"
+	args = libimobiledevice.NewAuxBuffer()
+	if err = args.AppendObject(0); err != nil {
+		return _out, cancelFunc, err
+	}
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+
+	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		_out <- m.Obj
+	})
+	go func() {
+		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			cancelFunc()
+		})
+
+		<-ctx.Done()
+		// time.Sleep(time.Second)
+		close(_out)
+		return
+	}()
+	return _out, cancelFunc, err
 }
 
 type Application struct {

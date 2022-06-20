@@ -153,6 +153,10 @@ type Instruments interface {
 	// SysMonStart(cfg ...interface{}) (_ interface{}, err error)
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
+
+	OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+
+	SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
 }
 
 type Testmanagerd interface {
