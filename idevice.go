@@ -77,6 +77,8 @@ type Device interface {
 	springBoardService() (springBoard SpringBoard, err error)
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
+
+	GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties

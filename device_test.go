@@ -154,6 +154,12 @@ func Test_device_Shutdown(t *testing.T) {
 	dev.Shutdown()
 }
 
+func Test_device_Perf(t *testing.T) {
+	//setupDevice(t)
+	setupLockdownSrv(t)
+	dev.GetPerfmon()
+}
+
 func Test_device_InstallationProxyBrowse(t *testing.T) {
 	setupDevice(t)
 

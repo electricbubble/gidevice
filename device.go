@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
 	"time"
@@ -589,6 +590,30 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 		return err
 	}
 	return d.crashReportMover.Move(hostDir, opts...)
+}
+
+func (d *device) GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error) {
+	instruments, err := d.lockdown.InstrumentsService()
+	outData, cancel, err := instruments.SysmontapServer()
+
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt)
+
+	go func() {
+		for s := range outData {
+			fmt.Println(s)
+		}
+		done <- os.Interrupt
+	}()
+
+	for {
+		select {
+		case <-done:
+			cancel()
+			fmt.Println()
+			return
+		}
+	}
 }
 
 func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {
