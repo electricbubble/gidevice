@@ -315,6 +315,8 @@ func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.
 
 	go func() {
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			args = libimobiledevice.NewAuxBuffer()
+			i.client.Invoke("stop", args, id, true)
 			cancelFunc()
 		})
 
@@ -324,6 +326,46 @@ func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.
 		return
 	}()
 	return _out, cancelFunc, err
+}
+
+func (i *instruments) SystemNetWorkServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error) {
+	var id uint32
+	ctx, cancelFunc := context.WithCancel(context.TODO())
+	netWorkData := make(chan map[string]interface{})
+	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
+		return netWorkData, cancelFunc, err
+	}
+	selector := "startMonitoring"
+	args := libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return netWorkData, cancelFunc, err
+	}
+	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		receData, ok := m.Obj.([]interface{})
+		if ok && len(receData) == 2 {
+			sendAndReceiveData, ok := receData[1].([]interface{})
+			if ok {
+				data := make(map[string]interface{})
+				data["rx.packets"] = sendAndReceiveData[0]
+				data["rx.bytes"] = sendAndReceiveData[1]
+				data["tx.packets"] = sendAndReceiveData[2]
+				data["tx.bytes"] = sendAndReceiveData[3]
+				netWorkData <- data
+			}
+		}
+	})
+	go func() {
+		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			cancelFunc()
+		})
+
+		<-ctx.Done()
+		// time.Sleep(time.Second)
+		close(netWorkData)
+		return
+	}()
+	return netWorkData, cancelFunc, err
 }
 
 func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
@@ -349,8 +391,11 @@ func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.Can
 		return _out, cancelFunc, err
 	}
 
-	selector = "startSamplingAtTimeInterval:"
+	selector = "startSamplingAtTimeInterval:processIdentifier:"
 	args = libimobiledevice.NewAuxBuffer()
+	if err = args.AppendObject(0); err != nil {
+		return _out, cancelFunc, err
+	}
 	if err = args.AppendObject(0); err != nil {
 		return _out, cancelFunc, err
 	}

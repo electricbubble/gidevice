@@ -593,27 +593,181 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 }
 
 func (d *device) GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error) {
-	instruments, err := d.lockdown.InstrumentsService()
-	outData, cancel, err := instruments.SysmontapServer()
+	//var pid string
+	//outData := d.iterComplexCpuAndMemory(pid)
+	//for data := range outData {
+	//	fmt.Println(data)
+	//}
+	//d.iterFps()
+	d.iterNetWork()
+	return
+}
 
+func (d *device) iterFps() (out <-chan map[string]interface{}) {
+	instruments, err := d.lockdown.InstrumentsService()
+	if err != nil {
+		return out
+	}
+	outData, _, err := instruments.OpenglServer()
+	if err != nil {
+		return out
+	}
 	done := make(chan os.Signal, 1)
+
 	signal.Notify(done, os.Interrupt)
 
+	for mess := range outData {
+		fmt.Println(mess)
+	}
+	return
+}
+
+//func (d *device) iterGPU() (out <-chan map[string]interface{}) {
+//
+//}
+
+func (d *device) iterNetWork() (out <-chan map[string]interface{}) {
+	instruments, err := d.lockdown.InstrumentsService()
+	if err != nil {
+		return out
+	}
+	outData, _, err := instruments.SystemNetWorkServer()
+	if err != nil {
+		return out
+	}
+	done := make(chan os.Signal, 1)
+
+	signal.Notify(done, os.Interrupt)
+
+	for data := range outData {
+		fmt.Println(data)
+	}
+	return
+}
+
+func (d *device) iterComplexCpuAndMemory(pid string) (out <-chan map[string]interface{}) {
+	instruments, err := d.lockdown.InstrumentsService()
+	if err != nil {
+		return out
+	}
+	outData, cancel, err := instruments.SysmontapServer()
+	if err != nil {
+		return out
+	}
+	done := make(chan os.Signal, 1)
+
+	signal.Notify(done, os.Interrupt)
+	resultInfo := make(chan map[string]interface{})
+
 	go func() {
-		for s := range outData {
-			fmt.Println(s)
+		for mess := range outData {
+			//var initMessArr []interface{}
+			//initMessArr = append(initMessArr, 0, 0, 0, 0, 0, 0, 0, 0)
+			// 构建返回信息
+			finalCpuAndMemoryInfo := make(map[string]interface{})
+
+			switch mess.(type) {
+			case []interface{}:
+				messArray := mess.([]interface{})
+				if len(messArray) != 2 {
+					continue
+				}
+				var sinfo = messArray[0].(map[string]interface{})
+				var pinfolist = messArray[1].(map[string]interface{})
+				if sinfo["CPUCount"] == nil {
+					var temp = sinfo
+					sinfo = pinfolist
+					pinfolist = temp
+				}
+				if sinfo["CPUCount"] == nil || pinfolist["Processes"] == nil {
+					continue
+				}
+				var cpuCount = sinfo["CPUCount"]
+				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
+				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
+				var totalCpuUsage = 0.0
+				for _, v := range pinfolist["Processes"].(map[string]interface{}) {
+					processInfo := sysmonPorceAttrs(v)
+					if processInfo == nil {
+						continue
+					}
+					totalCpuUsage += processInfo["cpuUsage"].(float64)
+				}
+
+				finalCpuAndMemoryInfo["type"] = "process"
+				finalCpuAndMemoryInfo["cpuCount"] = cpuCount
+				finalCpuAndMemoryInfo["sysCpuUsage"] = cpuTotalLoad
+				finalCpuAndMemoryInfo["attrCpuTotal"] = cpuTotalLoad
+				finalCpuAndMemoryInfo["attrSystemInfo"] = sysCpuUsage
+
+				var cpuUsage = 0.0
+				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
+				if pidMess != nil {
+					processInfo := sysmonPorceAttrs(pidMess)
+					cpuUsage = processInfo["cpuUsage"].(float64)
+					finalCpuAndMemoryInfo["cpuUsage"] = cpuUsage
+					finalCpuAndMemoryInfo["pid"] = pid
+					finalCpuAndMemoryInfo["vss"] = processInfo["memVirtualSize"]
+					finalCpuAndMemoryInfo["rss"] = processInfo["memResidentSize"]
+					finalCpuAndMemoryInfo["anon"] = processInfo["memAnon"]
+					finalCpuAndMemoryInfo["attrCpuUsage"] = processInfo["cpuUsage"]
+					finalCpuAndMemoryInfo["attrCtxSwitch"] = processInfo["ctxSwitch"]
+					finalCpuAndMemoryInfo["attrIntWakeups"] = processInfo["intWakeups"]
+					finalCpuAndMemoryInfo["physMemory"] = processInfo["physFootprint"]
+
+					//finalCpuAndMemoryInfo["physMemoryString"] = fmt.Sprintf("%1f MiB", float64(processInfo["physFootprint"].(uint64))/1024/1024)
+				}
+				resultInfo <- finalCpuAndMemoryInfo
+			default:
+				//fmt.Println(i)
+				continue
+			}
 		}
 		done <- os.Interrupt
 	}()
-
-	for {
+	go func() {
 		select {
 		case <-done:
 			cancel()
 			fmt.Println()
 			return
 		}
+	}()
+	return resultInfo
+}
+
+// 获取进程相关信息
+func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
+	if cpuMess == nil {
+		return nil
 	}
+	cpuMessArray, ok := cpuMess.([]interface{})
+	if !ok {
+		return nil
+	}
+	if len(cpuMessArray) != 8 {
+		return nil
+	}
+	if outCpuInfo == nil {
+		outCpuInfo = map[string]interface{}{}
+	}
+	// 虚拟内存
+	outCpuInfo["memVirtualSize"] = cpuMessArray[0]
+	// CPU
+	outCpuInfo["cpuUsage"] = cpuMessArray[1]
+	// 每秒进程的上下文切换次数
+	outCpuInfo["ctxSwitch"] = cpuMessArray[2]
+	// 每秒进程唤醒的线程数
+	outCpuInfo["intWakeups"] = cpuMessArray[3]
+	// 物理内存
+	outCpuInfo["physFootprint"] = cpuMessArray[4]
+
+	outCpuInfo["memResidentSize"] = cpuMessArray[5]
+	// 匿名内存
+	outCpuInfo["memAnon"] = cpuMessArray[6]
+
+	outCpuInfo["pid"] = cpuMessArray[7]
+	return
 }
 
 func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {

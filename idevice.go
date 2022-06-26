@@ -159,6 +159,8 @@ type Instruments interface {
 	OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
 
 	SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+
+	SystemNetWorkServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error)
 }
 
 type Testmanagerd interface {
