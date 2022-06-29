@@ -368,6 +368,52 @@ func (i *instruments) SystemNetWorkServer() (out <-chan map[string]interface{}, 
 	return netWorkData, cancelFunc, err
 }
 
+func (i *instruments) ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error) {
+	//
+	var id uint32
+	ctx, cancelFunc := context.WithCancel(context.TODO())
+	_out := make(chan interface{})
+	if id, err = i.requestChannel("com.apple.xcode.debug-gauge-data-providers.NetworkStatistics"); err != nil {
+		return _out, cancelFunc, err
+	}
+	args := libimobiledevice.NewAuxBuffer()
+	var arrayList = []string{
+		"net.bytes",
+		"net.bytes.delta",
+		"net.connections[]",
+		"net.packets",
+		"net.packets.delta",
+		"net.rx.bytes",
+		"net.rx.bytes.delta",
+		"net.rx.packets",
+		"net.rx.packets.delta",
+		"net.tx.bytes",
+		"net.tx.bytes.delta",
+		"net.tx.packets",
+		"net.tx.packets.delta"}
+	args.AppendObject(arrayList)
+	args.AppendObject(pid)
+	selector := "sampleAttributes:forPIDs:"
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return _out, cancelFunc, err
+	}
+	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		_out <- m.Obj
+	})
+	go func() {
+		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
+			cancelFunc()
+		})
+
+		<-ctx.Done()
+		// time.Sleep(time.Second)
+		close(_out)
+		return
+	}()
+	return _out, cancelFunc, err
+	//return
+}
+
 func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
 	var id uint32
 	ctx, cancelFunc := context.WithCancel(context.TODO())

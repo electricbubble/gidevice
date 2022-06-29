@@ -599,7 +599,7 @@ func (d *device) GetPerfmon() (out <-chan string, cancel context.CancelFunc, err
 	//	fmt.Println(data)
 	//}
 	//d.iterFps()
-	d.iterNetWork()
+	d.iterProcessNetWork()
 	return
 }
 
@@ -632,6 +632,25 @@ func (d *device) iterNetWork() (out <-chan map[string]interface{}) {
 		return out
 	}
 	outData, _, err := instruments.SystemNetWorkServer()
+	if err != nil {
+		return out
+	}
+	done := make(chan os.Signal, 1)
+
+	signal.Notify(done, os.Interrupt)
+
+	for data := range outData {
+		fmt.Println(data)
+	}
+	return
+}
+
+func (d *device) iterProcessNetWork() (out <-chan map[string]interface{}) {
+	instruments, err := d.lockdown.InstrumentsService()
+	if err != nil {
+		return out
+	}
+	outData, _, err := instruments.ProcessNetwork(0)
 	if err != nil {
 		return out
 	}

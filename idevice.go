@@ -160,6 +160,8 @@ type Instruments interface {
 
 	SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
 
+	ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
+
 	SystemNetWorkServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error)
 }
 
