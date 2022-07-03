@@ -594,44 +594,103 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 
 func (d *device) GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error) {
 	//var pid string
+	//pid = "0"
 	//outData := d.iterComplexCpuAndMemory(pid)
 	//for data := range outData {
 	//	fmt.Println(data)
 	//}
-	//d.iterFps()
-	d.iterProcessNetWork()
+	outData := d.IterFps()
+	for i := range outData {
+		fmt.Println(i)
+	}
+	//d.iterProcessNetWork()
 	return
 }
 
-func (d *device) iterFps() (out <-chan map[string]interface{}) {
+func (d *device) IterFps() (out <-chan map[string]interface{}) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
 		return out
 	}
-	outData, _, err := instruments.OpenglServer()
+	outData, cancel, err := instruments.OpenglServer()
+	if err != nil {
+		return out
+	}
+	done := make(chan os.Signal, 1)
+
+	signal.Notify(done, os.Interrupt, os.Kill)
+	resultInfo := make(chan map[string]interface{})
+	go func() {
+		for mess := range outData {
+			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
+			if fps == nil {
+				continue
+			}
+			finalFpsInfo := make(map[string]interface{})
+			finalFpsInfo["fps"] = fps
+			finalFpsInfo["time"] = time.Now()
+			resultInfo <- finalFpsInfo
+		}
+		done <- os.Interrupt
+	}()
+	go func() {
+		select {
+		case <-done:
+			fmt.Println("fps info end...")
+			cancel()
+			return
+		}
+	}()
+	return resultInfo
+}
+
+func (d *device) IterGPU() (out <-chan map[string]interface{}) {
+	instruments, err := d.lockdown.InstrumentsService()
+	if err != nil {
+		return out
+	}
+	outData, cancel, err := instruments.OpenglServer()
 	if err != nil {
 		return out
 	}
 	done := make(chan os.Signal, 1)
 
 	signal.Notify(done, os.Interrupt)
-
-	for mess := range outData {
-		fmt.Println(mess)
-	}
-	return
+	resultInfo := make(chan map[string]interface{})
+	go func() {
+		for mess := range outData {
+			var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
+			var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
+			var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
+			if deviceUtilization == nil || tilerUtilization == nil || rendererUtilization == nil {
+				continue
+			}
+			finalGUPInfo := make(map[string]interface{})
+			finalGUPInfo["Device Utilization"] = deviceUtilization
+			finalGUPInfo["Tiler Utilization"] = tilerUtilization
+			finalGUPInfo["Renderer Utilization"] = rendererUtilization
+			finalGUPInfo["time"] = time.Now()
+			resultInfo <- finalGUPInfo
+		}
+		done <- os.Interrupt
+	}()
+	go func() {
+		select {
+		case <-done:
+			cancel()
+			fmt.Println("GPU info end...")
+			return
+		}
+	}()
+	return resultInfo
 }
 
-//func (d *device) iterGPU() (out <-chan map[string]interface{}) {
-//
-//}
-
-func (d *device) iterNetWork() (out <-chan map[string]interface{}) {
+func (d *device) IterNetWork() (out <-chan map[string]interface{}) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
 		return out
 	}
-	outData, _, err := instruments.SystemNetWorkServer()
+	outData, cancel, err := instruments.SystemNetWorkServer()
 	if err != nil {
 		return out
 	}
@@ -642,25 +701,14 @@ func (d *device) iterNetWork() (out <-chan map[string]interface{}) {
 	for data := range outData {
 		fmt.Println(data)
 	}
-	return
-}
-
-func (d *device) iterProcessNetWork() (out <-chan map[string]interface{}) {
-	instruments, err := d.lockdown.InstrumentsService()
-	if err != nil {
-		return out
-	}
-	outData, _, err := instruments.ProcessNetwork(0)
-	if err != nil {
-		return out
-	}
-	done := make(chan os.Signal, 1)
-
-	signal.Notify(done, os.Interrupt)
-
-	for data := range outData {
-		fmt.Println(data)
-	}
+	go func() {
+		select {
+		case <-done:
+			cancel()
+			fmt.Println("sys network info end...")
+			return
+		}
+	}()
 	return
 }
 
@@ -748,7 +796,7 @@ func (d *device) iterComplexCpuAndMemory(pid string) (out <-chan map[string]inte
 		select {
 		case <-done:
 			cancel()
-			fmt.Println()
+			fmt.Println("cpu and memory end...")
 			return
 		}
 	}()
