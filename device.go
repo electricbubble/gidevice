@@ -592,71 +592,111 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 	return d.crashReportMover.Move(hostDir, opts...)
 }
 
-func (d *device) GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error) {
-	//var pid string
-	//pid = "0"
-	//outData := d.iterComplexCpuAndMemory(pid)
-	//for data := range outData {
-	//	fmt.Println(data)
-	//}
-	outData := d.IterFps()
-	for i := range outData {
-		fmt.Println(i)
+func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}) {
+	//var chanCPU chan map[string]interface{}
+	//var chanMEM chan map[string]interface{}
+	//chanGPU := make(chan map[string]interface{})
+	var chanFPS chan map[string]interface{}
+	var chanGPU chan map[string]interface{}
+	//var chanNetWorking chan map[string]interface{}
+
+	perfmonOpts := new(perfmonOption)
+	if len(opts) == 0 {
+		perfmonOpts = nil
+	} else {
+		for _, optFunc := range opts {
+			optFunc(perfmonOpts)
+		}
 	}
-	//d.iterProcessNetWork()
-	return
+	_, okGPU := perfmonOpts.opts["GPU"]
+	_, okFPS := perfmonOpts.opts["FPS"]
+
+	if okGPU && chanGPU == nil {
+		chanGPU := make(chan map[string]interface{})
+		if chanGPU == nil {
+
+		}
+	}
+	if okFPS && chanFPS == nil {
+		chanFPS := make(chan map[string]interface{})
+		if chanFPS == nil {
+			fmt.Println("")
+		}
+	}
+	if chanFPS != nil || chanGPU != nil {
+		if err := d.IterGPUAndFPS(chanGPU, chanFPS); err != nil {
+			fmt.Println(err)
+		}
+	}
+
 }
 
-func (d *device) IterFps() (out <-chan map[string]interface{}) {
+//func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}) {
+//	var err error
+//	perfmonOpts := new(perfmonOption)
+//	if len(opts) == 0 {
+//		perfmonOpts = nil
+//	} else {
+//		for _, optFunc := range opts {
+//			optFunc(perfmonOpts)
+//		}
+//	}
+//	result := make(map[string]interface{})
+//	_, okGPU := perfmonOpts.opts["GPU"]
+//	_, okFPS := perfmonOpts.opts["FPS"]
+//	GPUResult, FPSResult, err := d.IterGPUAndFPS()
+//	if (okGPU || okFPS) && err != nil {
+//		fmt.Println(err)
+//		os.Exit(0)
+//	}
+//	if okGPU {
+//		result["GPU"] = GPUResult
+//	}
+//	if okFPS {
+//		result["FPS"] = FPSResult
+//	}
+//	_, okCPU := perfmonOpts.opts["CPU"]
+//	_, okMEM := perfmonOpts.opts["MEM"]
+//	CPUResult, MEMResult, err := d.IterComplexCpuAndMemory(pid)
+//	if (okMEM || okCPU) && err != nil {
+//
+//		fmt.Println(err)
+//		os.Exit(0)
+//	}
+//	if okCPU {
+//		result["CPU"] = CPUResult
+//	}
+//	if okMEM {
+//		if pid != "" {
+//			result["MEM"] = MEMResult
+//		}
+//	}
+//	_, okNetWorking := perfmonOpts.opts["NetWorking"]
+//	if okNetWorking {
+//		netWorkingData, err := d.IterNetWork()
+//		if err != nil {
+//			fmt.Println(err)
+//			os.Exit(0)
+//		}
+//		result["networking"] = netWorkingData
+//	}
+//	out <- result
+//	return
+//}
+
+func (d *device) IterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan map[string]interface{}) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
-		return out
+		return err
 	}
-	outData, cancel, err := instruments.OpenglServer()
+	outData, cancel, err := instruments.StartOpenglServer()
 	if err != nil {
-		return out
-	}
-	done := make(chan os.Signal, 1)
-
-	signal.Notify(done, os.Interrupt, os.Kill)
-	resultInfo := make(chan map[string]interface{})
-	go func() {
-		for mess := range outData {
-			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
-			if fps == nil {
-				continue
-			}
-			finalFpsInfo := make(map[string]interface{})
-			finalFpsInfo["fps"] = fps
-			finalFpsInfo["time"] = time.Now()
-			resultInfo <- finalFpsInfo
-		}
-		done <- os.Interrupt
-	}()
-	go func() {
-		select {
-		case <-done:
-			fmt.Println("fps info end...")
-			cancel()
-			return
-		}
-	}()
-	return resultInfo
-}
-
-func (d *device) IterGPU() (out <-chan map[string]interface{}) {
-	instruments, err := d.lockdown.InstrumentsService()
-	if err != nil {
-		return out
-	}
-	outData, cancel, err := instruments.OpenglServer()
-	if err != nil {
-		return out
+		return err
 	}
 	done := make(chan os.Signal, 1)
 
 	signal.Notify(done, os.Interrupt)
-	resultInfo := make(chan map[string]interface{})
+
 	go func() {
 		for mess := range outData {
 			var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
@@ -665,76 +705,89 @@ func (d *device) IterGPU() (out <-chan map[string]interface{}) {
 			if deviceUtilization == nil || tilerUtilization == nil || rendererUtilization == nil {
 				continue
 			}
-			finalGUPInfo := make(map[string]interface{})
-			finalGUPInfo["Device Utilization"] = deviceUtilization
-			finalGUPInfo["Tiler Utilization"] = tilerUtilization
-			finalGUPInfo["Renderer Utilization"] = rendererUtilization
-			finalGUPInfo["time"] = time.Now()
-			resultInfo <- finalGUPInfo
+			if outGPU != nil {
+				finalGUPInfo := make(map[string]interface{})
+				finalGUPInfo["Device Utilization"] = deviceUtilization
+				finalGUPInfo["Tiler Utilization"] = tilerUtilization
+				finalGUPInfo["Renderer Utilization"] = rendererUtilization
+				finalGUPInfo["time"] = time.Now()
+				outGPU <- finalGUPInfo
+			}
+			if outFPS != nil {
+				var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
+				finalFpsInfo := make(map[string]interface{})
+				finalFpsInfo["fps"] = fps
+				finalFpsInfo["time"] = time.Now()
+
+				outFPS <- finalFpsInfo
+			}
 		}
 		done <- os.Interrupt
 	}()
 	go func() {
 		select {
 		case <-done:
-			cancel()
 			fmt.Println("GPU info end...")
+			cancel()
 			return
 		}
 	}()
-	return resultInfo
+	return nil
 }
 
-func (d *device) IterNetWork() (out <-chan map[string]interface{}) {
+func (d *device) IterNetWork(outNetWorking chan map[string]interface{}) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
-		return out
+		return err
 	}
-	outData, cancel, err := instruments.SystemNetWorkServer()
+	outData, cancel, err := instruments.StartNetWorkingServer()
 	if err != nil {
-		return out
+		return err
 	}
 	done := make(chan os.Signal, 1)
 
 	signal.Notify(done, os.Interrupt)
+	go func() {
+		for data := range outData {
+			if outNetWorking != nil {
+				outNetWorking <- data
+			}
+		}
+		done <- os.Interrupt
+	}()
 
-	for data := range outData {
-		fmt.Println(data)
-	}
 	go func() {
 		select {
 		case <-done:
-			cancel()
 			fmt.Println("sys network info end...")
+			cancel()
 			return
 		}
 	}()
 	return
 }
 
-func (d *device) iterComplexCpuAndMemory(pid string) (out <-chan map[string]interface{}) {
+func (d *device) IterComplexCpuAndMemory(outCPU chan map[string]interface{}, outMEM chan map[string]interface{}, pid string) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
-		return out
+		return err
 	}
-	outData, cancel, err := instruments.SysmontapServer()
+	outData, cancel, err := instruments.StartSysmontapServer()
 	if err != nil {
-		return out
+		return err
 	}
 	done := make(chan os.Signal, 1)
 
 	signal.Notify(done, os.Interrupt)
-	resultInfo := make(chan map[string]interface{})
+	var finalCpuInfo map[string]interface{}
 
 	go func() {
 		for mess := range outData {
 			//var initMessArr []interface{}
 			//initMessArr = append(initMessArr, 0, 0, 0, 0, 0, 0, 0, 0)
-			// 构建返回信息
-			finalCpuAndMemoryInfo := make(map[string]interface{})
-
 			switch mess.(type) {
 			case []interface{}:
+
 				messArray := mess.([]interface{})
 				if len(messArray) != 2 {
 					continue
@@ -760,31 +813,38 @@ func (d *device) iterComplexCpuAndMemory(pid string) (out <-chan map[string]inte
 					}
 					totalCpuUsage += processInfo["cpuUsage"].(float64)
 				}
-
-				finalCpuAndMemoryInfo["type"] = "process"
-				finalCpuAndMemoryInfo["cpuCount"] = cpuCount
-				finalCpuAndMemoryInfo["sysCpuUsage"] = cpuTotalLoad
-				finalCpuAndMemoryInfo["attrCpuTotal"] = cpuTotalLoad
-				finalCpuAndMemoryInfo["attrSystemInfo"] = sysCpuUsage
+				if outCPU != nil {
+					// 构建返回信息
+					finalCpuInfo := make(map[string]interface{})
+					finalCpuInfo["type"] = "process"
+					finalCpuInfo["cpuCount"] = cpuCount
+					finalCpuInfo["sysCpuUsage"] = cpuTotalLoad
+					finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
+					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
+				}
 
 				var cpuUsage = 0.0
 				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
 				if pidMess != nil {
 					processInfo := sysmonPorceAttrs(pidMess)
-					cpuUsage = processInfo["cpuUsage"].(float64)
-					finalCpuAndMemoryInfo["cpuUsage"] = cpuUsage
-					finalCpuAndMemoryInfo["pid"] = pid
-					finalCpuAndMemoryInfo["vss"] = processInfo["memVirtualSize"]
-					finalCpuAndMemoryInfo["rss"] = processInfo["memResidentSize"]
-					finalCpuAndMemoryInfo["anon"] = processInfo["memAnon"]
-					finalCpuAndMemoryInfo["attrCpuUsage"] = processInfo["cpuUsage"]
-					finalCpuAndMemoryInfo["attrCtxSwitch"] = processInfo["ctxSwitch"]
-					finalCpuAndMemoryInfo["attrIntWakeups"] = processInfo["intWakeups"]
-					finalCpuAndMemoryInfo["physMemory"] = processInfo["physFootprint"]
-
-					//finalCpuAndMemoryInfo["physMemoryString"] = fmt.Sprintf("%1f MiB", float64(processInfo["physFootprint"].(uint64))/1024/1024)
+					if finalCpuInfo != nil {
+						cpuUsage = processInfo["cpuUsage"].(float64)
+						finalCpuInfo["cpuUsage"] = cpuUsage
+						finalCpuInfo["pid"] = pid
+						finalCpuInfo["attrCpuUsage"] = processInfo["cpuUsage"]
+						finalCpuInfo["attrCtxSwitch"] = processInfo["ctxSwitch"]
+						finalCpuInfo["attrIntWakeups"] = processInfo["intWakeups"]
+						outCPU <- finalCpuInfo
+					}
+					if outMEM != nil {
+						finalMEMInfo := make(map[string]interface{})
+						finalMEMInfo["vss"] = processInfo["memVirtualSize"]
+						finalMEMInfo["rss"] = processInfo["memResidentSize"]
+						finalMEMInfo["anon"] = processInfo["memAnon"]
+						finalMEMInfo["physMemory"] = processInfo["physFootprint"]
+						outMEM <- finalMEMInfo
+					}
 				}
-				resultInfo <- finalCpuAndMemoryInfo
 			default:
 				//fmt.Println(i)
 				continue
@@ -800,7 +860,7 @@ func (d *device) iterComplexCpuAndMemory(pid string) (out <-chan map[string]inte
 			return
 		}
 	}()
-	return resultInfo
+	return nil
 }
 
 // 获取进程相关信息

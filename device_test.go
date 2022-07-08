@@ -68,7 +68,7 @@ func Test_device_SavePairRecord(t *testing.T) {
 func Test_device_XCTest(t *testing.T) {
 	setupLockdownSrv(t)
 
-	bundleID = "com.leixipaopao.WebDriverAgentRunner.xctrunner"
+	bundleID = "com.DataMesh.CheckList"
 	out, cancel, err := dev.XCTest(bundleID)
 	// out, cancel, err := dev.XCTest(bundleID, WithXCTestEnv(map[string]interface{}{"USE_PORT": 8222, "MJPEG_SERVER_PORT": 8333}))
 	if err != nil {
@@ -157,7 +157,7 @@ func Test_device_Shutdown(t *testing.T) {
 func Test_device_Perf(t *testing.T) {
 	//setupDevice(t)
 	setupLockdownSrv(t)
-	dev.GetPerfmon()
+	//dev.GetPerfmon(WithPerfmonOptions("a", "c", "d", "e"))
 }
 
 func Test_device_InstallationProxyBrowse(t *testing.T) {

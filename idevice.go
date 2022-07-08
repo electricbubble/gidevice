@@ -78,7 +78,7 @@ type Device interface {
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
-	GetPerfmon() (out <-chan string, cancel context.CancelFunc, err error)
+	GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{})
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -156,13 +156,18 @@ type Instruments interface {
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 
-	OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+	StartOpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
 
-	SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+	StopOpenglServer()
 
+	StartSysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+
+	StopSysmontapServer()
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
 
-	SystemNetWorkServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error)
+	StartNetWorkingServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error)
+
+	StopNetWorkingServer()
 }
 
 type Testmanagerd interface {
@@ -379,6 +384,23 @@ type crashReportMoverOption struct {
 	whenDone func(filename string)
 	keep     bool
 	extract  bool
+}
+
+type perfmonOption struct {
+	opts map[string]string
+}
+
+type PerfmonOption func(option *perfmonOption)
+
+func WithPerfmonOptions(options ...string) PerfmonOption {
+	return func(perfmonOpt *perfmonOption) {
+		if perfmonOpt.opts == nil {
+			perfmonOpt.opts = make(map[string]string)
+		}
+		for k := range options {
+			perfmonOpt.opts[options[k]] = options[k]
+		}
+	}
 }
 
 func defaultCrashReportMoverOption() *crashReportMoverOption {

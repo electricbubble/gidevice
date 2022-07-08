@@ -258,7 +258,7 @@ func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DT
 	i.client.RegisterCallback(obj, cb)
 }
 
-func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+func (i *instruments) StartSysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
 	var id uint32
 	_, cancelFunc := context.WithCancel(context.TODO())
 	_out := make(chan interface{})
@@ -315,8 +315,6 @@ func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.
 
 	go func() {
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
-			args = libimobiledevice.NewAuxBuffer()
-			i.client.Invoke("stop", args, id, true)
 			cancelFunc()
 		})
 
@@ -328,7 +326,21 @@ func (i *instruments) SysmontapServer() (out <-chan interface{}, cancel context.
 	return _out, cancelFunc, err
 }
 
-func (i *instruments) SystemNetWorkServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error) {
+func (i *instruments) StopSysmontapServer() {
+	id, err := i.requestChannel("com.apple.instruments.server.services.sysmontap")
+	if err != nil {
+		return
+	}
+	selector := "stop"
+	args := libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return
+	}
+	return
+}
+
+func (i *instruments) StartNetWorkingServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error) {
 	var id uint32
 	ctx, cancelFunc := context.WithCancel(context.TODO())
 	netWorkData := make(chan map[string]interface{})
@@ -368,7 +380,21 @@ func (i *instruments) SystemNetWorkServer() (out <-chan map[string]interface{}, 
 	return netWorkData, cancelFunc, err
 }
 
-func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+func (i *instruments) StopNetWorkingServer() {
+	var id uint32
+	id, err := i.requestChannel("com.apple.instruments.server.services.networking")
+	if err != nil {
+		return
+	}
+	selector := "stopMonitoring"
+	args := libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return
+	}
+}
+
+func (i *instruments) StartOpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
 	var id uint32
 	ctx, cancelFunc := context.WithCancel(context.TODO())
 	_out := make(chan interface{})
@@ -410,13 +436,25 @@ func (i *instruments) OpenglServer() (out <-chan interface{}, cancel context.Can
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
 			cancelFunc()
 		})
-
 		<-ctx.Done()
-		// time.Sleep(time.Second)
 		close(_out)
 		return
 	}()
 	return _out, cancelFunc, err
+}
+
+func (i *instruments) StopOpenglServer() {
+
+	id, err := i.requestChannel("com.apple.instruments.server.services.graphics.opengl")
+	if err != nil {
+		return
+	}
+	selector := "stop"
+	args := libimobiledevice.NewAuxBuffer()
+
+	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
+		return
+	}
 }
 
 type Application struct {
