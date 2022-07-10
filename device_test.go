@@ -157,7 +157,10 @@ func Test_device_Shutdown(t *testing.T) {
 func Test_device_Perf(t *testing.T) {
 	//setupDevice(t)
 	setupLockdownSrv(t)
-	//dev.GetPerfmon(WithPerfmonOptions("a", "c", "d", "e"))
+	outData := dev.GetPerfmon("0", WithPerfmonOptions("GPU", "FPS", "CPU", "MEM", "NetWorking"))
+	for data := range outData {
+		fmt.Println(data)
+	}
 }
 
 func Test_device_InstallationProxyBrowse(t *testing.T) {
