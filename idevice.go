@@ -411,6 +411,17 @@ func WithPerfmonOptions(options ...string) PerfmonOption {
 	}
 }
 
+func WithPerfmonOptionsByList(options []string) PerfmonOption {
+	return func(perfmonOpt *perfmonOption) {
+		if perfmonOpt.opts == nil {
+			perfmonOpt.opts = make(map[string]string)
+		}
+		for k := range options {
+			perfmonOpt.opts[options[k]] = options[k]
+		}
+	}
+}
+
 func defaultCrashReportMoverOption() *crashReportMoverOption {
 	return &crashReportMoverOption{
 		whenDone: func(filename string) {},
