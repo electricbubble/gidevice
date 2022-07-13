@@ -79,6 +79,14 @@ type Device interface {
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
 	GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{})
+
+	StopGetPerfmon(opts ...PerfmonOption)
+
+	StopGPUAndFPS()
+
+	StopCPUAndMEM()
+
+	StopNetWorking()
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties

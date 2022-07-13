@@ -1,6 +1,7 @@
 package giDevice
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -159,7 +160,14 @@ func Test_device_Perf(t *testing.T) {
 	setupLockdownSrv(t)
 	outData := dev.GetPerfmon("0", WithPerfmonOptions("GPU", "FPS", "CPU", "MEM", "NetWorking"))
 	for data := range outData {
-		fmt.Println(data)
+		b, err := json.Marshal(data)
+		if err != nil {
+			fmt.Println("json.Marshal failed:", err)
+			return
+		}
+
+		fmt.Println(string(b))
+		//fmt.Println(data)
 	}
 }
 
