@@ -592,7 +592,7 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 	return d.crashReportMover.Move(hostDir, opts...)
 }
 
-func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}) {
+func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}, err error) {
 	var chanCPU chan map[string]interface{}
 	var chanMEM chan map[string]interface{}
 	var chanFPS chan map[string]interface{}
@@ -602,12 +602,12 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	perfmonOpts := new(perfmonOption)
 	if len(opts) == 0 {
 		perfmonOpts = nil
+		return nil, err
 	} else {
 		for _, optFunc := range opts {
 			optFunc(perfmonOpts)
 		}
 	}
-
 	_, OKCPU := perfmonOpts.opts["CPU"]
 	_, okMEM := perfmonOpts.opts["MEM"]
 
@@ -620,7 +620,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 
 	if chanCPU != nil || chanMEM != nil {
 		if err := d.IterCpuAndMemory(chanCPU, chanMEM, pid); err != nil {
-			fmt.Println(err)
+			return nil, err
 		}
 	}
 
@@ -635,7 +635,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	}
 	if chanFPS != nil || chanGPU != nil {
 		if err := d.IterGPUAndFPS(chanGPU, chanFPS); err != nil {
-			fmt.Println(err)
+			return nil, err
 		}
 	}
 
@@ -643,7 +643,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	if okNetWorking {
 		chanNetWorking = make(chan map[string]interface{})
 		if err := d.IterNetWork(chanNetWorking); err != nil {
-			fmt.Println(err)
+			return nil, err
 		}
 	}
 
@@ -847,7 +847,13 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 					if processInfo == nil {
 						continue
 					}
-					totalCpuUsage += processInfo["cpuUsage"].(float64)
+					switch processInfo["cpuUsage"].(type) {
+					case float64:
+						totalCpuUsage += processInfo["cpuUsage"].(float64)
+						break
+					default:
+						fmt.Println(processInfo["cpuUsage"].(float64))
+					}
 				}
 				if outCPU != nil {
 					// 构建返回信息

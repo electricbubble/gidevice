@@ -78,15 +78,15 @@ type Device interface {
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
-	GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{})
-
-	StopGetPerfmon(opts ...PerfmonOption)
-
+	IterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan map[string]interface{}) (err error)
+	IterNetWork(outNetWorking chan map[string]interface{}) (err error)
+	IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM chan map[string]interface{}, pid string) (err error)
 	StopGPUAndFPS()
-
 	StopCPUAndMEM()
-
 	StopNetWorking()
+
+	GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}, err error)
+	StopGetPerfmon(opts ...PerfmonOption)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
