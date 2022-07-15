@@ -861,7 +861,7 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 					finalCpuInfo["type"] = "process"
 					finalCpuInfo["cpuCount"] = cpuCount
 					finalCpuInfo["sysCpuUsage"] = cpuTotalLoad
-					finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
+					//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
 					finalCpuInfo["time"] = time.Now().Unix()
 					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
 				}
