@@ -158,7 +158,7 @@ func Test_device_Shutdown(t *testing.T) {
 func Test_device_Perf(t *testing.T) {
 	//setupDevice(t)
 	setupLockdownSrv(t)
-	outData, _ := dev.GetPerfmon("65986", WithPerfmonOptions("GPU", "FPS", "CPU", "MEM", "NetWorking"))
+	outData, _ := dev.GetPerfmon("0", WithPerfmonOptions("GPU", "FPS", "CPU", "MEM", "NetWorking"))
 	for data := range outData {
 		b, err := json.Marshal(data)
 		if err != nil {

@@ -889,7 +889,12 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 						outMEM <- finalMEMInfo
 					}
 				} else {
-					finalCpuInfo["attrSystemInfo"] = sysCpuUsage
+					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
+					finalCpuInfo["cpuUsage"] = -1.0
+					finalCpuInfo["pid"] = pid
+					finalCpuInfo["attrCpuUsage"] = -1.0
+					finalCpuInfo["attrCtxSwitch"] = -1
+					finalCpuInfo["attrIntWakeups"] = -1
 					outCPU <- finalCpuInfo
 				}
 			default:
