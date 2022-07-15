@@ -874,7 +874,6 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 						cpuUsage = processInfo["cpuUsage"].(float64)
 						finalCpuInfo["cpuUsage"] = cpuUsage
 						finalCpuInfo["pid"] = pid
-						finalCpuInfo["attrCpuUsage"] = processInfo["cpuUsage"]
 						finalCpuInfo["attrCtxSwitch"] = processInfo["ctxSwitch"]
 						finalCpuInfo["attrIntWakeups"] = processInfo["intWakeups"]
 						outCPU <- finalCpuInfo
@@ -892,7 +891,6 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
 					finalCpuInfo["cpuUsage"] = -1.0
 					finalCpuInfo["pid"] = pid
-					finalCpuInfo["attrCpuUsage"] = -1.0
 					finalCpuInfo["attrCtxSwitch"] = -1
 					finalCpuInfo["attrIntWakeups"] = -1
 					outCPU <- finalCpuInfo
