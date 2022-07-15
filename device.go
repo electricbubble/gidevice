@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/electricbubble/gidevice/pkg/ipa"
@@ -599,6 +600,10 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	var chanGPU chan map[string]interface{}
 	var chanNetWorking chan map[string]interface{}
 
+	if d.lockdown == nil {
+		d.lockdownService()
+	}
+
 	perfmonOpts := new(perfmonOption)
 	if len(opts) == 0 {
 		perfmonOpts = nil
@@ -619,7 +624,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	}
 
 	if chanCPU != nil || chanMEM != nil {
-		if err := d.IterCpuAndMemory(chanCPU, chanMEM, pid); err != nil {
+		if err := d.iterCpuAndMemory(chanCPU, chanMEM, pid); err != nil {
 			return nil, err
 		}
 	}
@@ -634,7 +639,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 		chanFPS = make(chan map[string]interface{})
 	}
 	if chanFPS != nil || chanGPU != nil {
-		if err := d.IterGPUAndFPS(chanGPU, chanFPS); err != nil {
+		if err := d.iterGPUAndFPS(chanGPU, chanFPS); err != nil {
 			return nil, err
 		}
 	}
@@ -642,7 +647,7 @@ func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[str
 	_, okNetWorking := perfmonOpts.opts["NetWorking"]
 	if okNetWorking {
 		chanNetWorking = make(chan map[string]interface{})
-		if err := d.IterNetWork(chanNetWorking); err != nil {
+		if err := d.iterNetWork(chanNetWorking); err != nil {
 			return nil, err
 		}
 	}
@@ -689,39 +694,39 @@ func (d *device) StopGetPerfmon(opts ...PerfmonOption) {
 	_, okFPS := perfmonOpts.opts["FPS"]
 	_, okNetWorking := perfmonOpts.opts["NetWorking"]
 	if OKCPU || okMEM {
-		d.StopCPUAndMEM()
+		d.stopCPUAndMEM()
 	}
 	if okGPU || okFPS {
-		d.StopGPUAndFPS()
+		d.stopGPUAndFPS()
 	}
 	if okNetWorking {
-		d.StopNetWorking()
+		d.stopNetWorking()
 	}
 
 }
 
-func (d *device) StopGPUAndFPS() {
+func (d *device) stopGPUAndFPS() {
 	if d.instruments == nil {
 		return
 	}
 	d.instruments.StopOpenglServer()
 }
 
-func (d *device) StopCPUAndMEM() {
+func (d *device) stopCPUAndMEM() {
 	if d.instruments == nil {
 		return
 	}
 	d.instruments.StopSysmontapServer()
 }
 
-func (d *device) StopNetWorking() {
+func (d *device) stopNetWorking() {
 	if d.instruments == nil {
 		return
 	}
 	d.instruments.StopNetWorkingServer()
 }
 
-func (d *device) IterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan map[string]interface{}) (err error) {
+func (d *device) iterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan map[string]interface{}) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
 		return err
@@ -730,7 +735,7 @@ func (d *device) IterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan m
 	if err != nil {
 		return err
 	}
-	done := make(chan os.Signal, 1)
+	done := make(chan os.Signal, syscall.SIGTERM)
 
 	signal.Notify(done, os.Interrupt)
 
@@ -772,7 +777,7 @@ func (d *device) IterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan m
 	return nil
 }
 
-func (d *device) IterNetWork(outNetWorking chan map[string]interface{}) (err error) {
+func (d *device) iterNetWork(outNetWorking chan map[string]interface{}) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
 		return err
@@ -781,7 +786,7 @@ func (d *device) IterNetWork(outNetWorking chan map[string]interface{}) (err err
 	if err != nil {
 		return err
 	}
-	done := make(chan os.Signal, 1)
+	done := make(chan os.Signal, syscall.SIGTERM)
 
 	signal.Notify(done, os.Interrupt)
 	go func() {
@@ -805,7 +810,7 @@ func (d *device) IterNetWork(outNetWorking chan map[string]interface{}) (err err
 	return
 }
 
-func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM chan map[string]interface{}, pid string) (err error) {
+func (d *device) iterCpuAndMemory(outCPU chan map[string]interface{}, outMEM chan map[string]interface{}, pid string) (err error) {
 	instruments, err := d.lockdown.InstrumentsService()
 	if err != nil {
 		return err
@@ -814,7 +819,7 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 	if err != nil {
 		return err
 	}
-	done := make(chan os.Signal, 1)
+	done := make(chan os.Signal, syscall.SIGTERM)
 
 	signal.Notify(done, os.Interrupt)
 	var finalCpuInfo map[string]interface{}
