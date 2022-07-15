@@ -841,20 +841,20 @@ func (d *device) IterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 				var cpuCount = sinfo["CPUCount"]
 				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
 				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
-				var totalCpuUsage = 0.0
-				for _, v := range pinfolist["Processes"].(map[string]interface{}) {
-					processInfo := sysmonPorceAttrs(v)
-					if processInfo == nil {
-						continue
-					}
-					switch processInfo["cpuUsage"].(type) {
-					case float64:
-						totalCpuUsage += processInfo["cpuUsage"].(float64)
-						break
-					default:
-						fmt.Println(processInfo["cpuUsage"].(float64))
-					}
-				}
+				//var totalCpuUsage = 0.0
+				//for _, v := range pinfolist["Processes"].(map[string]interface{}) {
+				//	processInfo := sysmonPorceAttrs(v)
+				//	if processInfo == nil {
+				//		continue
+				//	}
+				//	switch processInfo["cpuUsage"].(type) {
+				//	case float64:
+				//		totalCpuUsage += processInfo["cpuUsage"].(float64)
+				//		break
+				//	default:
+				//		fmt.Println(processInfo["cpuUsage"].(float64))
+				//	}
+				//}
 				if outCPU != nil {
 					// 构建返回信息
 					finalCpuInfo = make(map[string]interface{})
