@@ -769,7 +769,6 @@ func (d *device) iterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan m
 	go func() {
 		select {
 		case <-done:
-			fmt.Println("GPU info end...")
 			cancel()
 			return
 		}
@@ -802,7 +801,6 @@ func (d *device) iterNetWork(outNetWorking chan map[string]interface{}) (err err
 	go func() {
 		select {
 		case <-done:
-			fmt.Println("sys network info end...")
 			cancel()
 			return
 		}
@@ -846,6 +844,7 @@ func (d *device) iterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 				var cpuCount = sinfo["CPUCount"]
 				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
 				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
+				// 另外一种计算CPU占比的方法，先不管，使用系统返回的就行
 				//var totalCpuUsage = 0.0
 				//for _, v := range pinfolist["Processes"].(map[string]interface{}) {
 				//	processInfo := sysmonPorceAttrs(v)
@@ -911,7 +910,6 @@ func (d *device) iterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 		select {
 		case <-done:
 			cancel()
-			fmt.Println("cpu and memory end...")
 			return
 		}
 	}()
