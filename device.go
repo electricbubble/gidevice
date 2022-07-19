@@ -769,6 +769,12 @@ func (d *device) iterGPUAndFPS(outGPU chan map[string]interface{}, outFPS chan m
 	go func() {
 		select {
 		case <-done:
+			if outGPU != nil {
+				close(outGPU)
+			}
+			if outFPS != nil {
+				close(outFPS)
+			}
 			cancel()
 			return
 		}
@@ -801,6 +807,9 @@ func (d *device) iterNetWork(outNetWorking chan map[string]interface{}) (err err
 	go func() {
 		select {
 		case <-done:
+			if outNetWorking != nil {
+				close(outNetWorking)
+			}
 			cancel()
 			return
 		}
@@ -909,6 +918,12 @@ func (d *device) iterCpuAndMemory(outCPU chan map[string]interface{}, outMEM cha
 	go func() {
 		select {
 		case <-done:
+			if outCPU != nil {
+				close(outCPU)
+			}
+			if outMEM != nil {
+				close(outMEM)
+			}
 			cancel()
 			return
 		}
