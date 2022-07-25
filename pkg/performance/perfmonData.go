@@ -14,7 +14,7 @@
  *  limitations under the License.
  *
  */
-package perfEntity
+package perfmorance
 
 import (
 	"encoding/json"
@@ -23,39 +23,45 @@ import (
 )
 
 type PerfMonData struct {
-	CPUInfo        *CPUInfo        `json:"CPU,omitempty"`
-	MEMInfo        *MEMInfo        `json:"MEM,omitempty"`
-	GPUInfo        *GPUInfo        `json:"GPU,omitempty"`
-	FPSInfo        *FPSInfo        `json:"FPS,omitempty"`
-	NetWorkingInfo *NetWorkingInfo `json:"NetWorking,omitempty"`
+	CPUInfo        *CPUInfo        `json:"cpuInfo,omitempty"`
+	MEMInfo        *MEMInfo        `json:"menInfo,omitempty"`
+	GPUInfo        *GPUInfo        `json:"gpuInfo,omitempty"`
+	FPSInfo        *FPSInfo        `json:"fpsInfo,omitempty"`
+	NetWorkingInfo *NetWorkingInfo `json:"netWorking,omitempty"`
 }
 
-func (PerfMonData PerfMonData) ToString() string {
+func (perfMonData PerfMonData) ToString() string {
 	var s strings.Builder
-	if PerfMonData.CPUInfo != nil {
-		s.WriteString(fmt.Sprintf("CPU:\n %s", PerfMonData.CPUInfo.ToString()))
+	if perfMonData.CPUInfo != nil {
+		s.WriteString(fmt.Sprintf("CPU:\n %s", perfMonData.CPUInfo.ToString()))
 	}
-	if PerfMonData.MEMInfo != nil {
-		s.WriteString(fmt.Sprintf("MEM:\n %s", PerfMonData.MEMInfo.ToString()))
+	if perfMonData.MEMInfo != nil {
+		s.WriteString(fmt.Sprintf("MEM:\n %s", perfMonData.MEMInfo.ToString()))
 	}
-	if PerfMonData.FPSInfo != nil {
-		s.WriteString(fmt.Sprintf("FPS:\n %s", PerfMonData.FPSInfo.ToString()))
+	if perfMonData.FPSInfo != nil {
+		s.WriteString(fmt.Sprintf("FPS:\n %s", perfMonData.FPSInfo.ToString()))
 	}
-	if PerfMonData.GPUInfo != nil {
-		s.WriteString(fmt.Sprintf("GPU:\n %s", PerfMonData.GPUInfo.ToString()))
+	if perfMonData.GPUInfo != nil {
+		s.WriteString(fmt.Sprintf("GPU:\n %s", perfMonData.GPUInfo.ToString()))
 	}
-	if PerfMonData.NetWorkingInfo != nil {
-		s.WriteString(fmt.Sprintf("Networking:\n %s", PerfMonData.NetWorkingInfo.ToString()))
+	if perfMonData.NetWorkingInfo != nil {
+		s.WriteString(fmt.Sprintf("Networking:\n %s", perfMonData.NetWorkingInfo.ToString()))
 	}
 	return s.String()
 }
 
-func (PerfMonData PerfMonData) ToJson() string {
-	result, _ := json.Marshal(PerfMonData)
+func (perfMonData PerfMonData) ToJson() string {
+	result, _ := json.Marshal(perfMonData)
 	return string(result)
 }
 
-func (PerfMonData PerfMonData) ToFormat() string {
-	result, _ := json.MarshalIndent(PerfMonData, "", "\t")
+func (perfMonData PerfMonData) ToFormat() string {
+	result, _ := json.MarshalIndent(perfMonData, "", "\t")
 	return string(result)
+}
+
+func (perfMonData PerfMonData) IsDataNull() bool {
+	return perfMonData.FPSInfo == nil && perfMonData.GPUInfo == nil &&
+		perfMonData.MEMInfo == nil && perfMonData.CPUInfo == nil &&
+		perfMonData.NetWorkingInfo == nil
 }

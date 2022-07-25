@@ -261,9 +261,12 @@ func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DT
 	i.client.RegisterCallback(obj, cb)
 }
 
-func (i *instruments) StartSysmontapServer(pid string) (chanMem chan perfEntity.MEMInfo, chanCPU chan perfEntity.CPUInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context) (chanCPU chan perfEntity.CPUInfo, chanMem chan perfEntity.MEMInfo, cancel context.CancelFunc, err error) {
 	var id uint32
-	ctx, cancelFunc := context.WithCancel(context.TODO())
+	if ctxParent == nil {
+		return nil, nil, nil, fmt.Errorf("missing context")
+	}
+	ctx, cancelFunc := context.WithCancel(ctxParent)
 	_outMEM := make(chan perfEntity.MEMInfo)
 	_outCPU := make(chan perfEntity.CPUInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.sysmontap"); err != nil {
@@ -278,7 +281,7 @@ func (i *instruments) StartSysmontapServer(pid string) (chanMem chan perfEntity.
 	{
 		config["bm"] = 0
 		config["cpuUsage"] = true
-		
+
 		config["procAttrs"] = []string{
 			"memVirtualSize", "cpuUsage", "ctxSwitch", "intWakeups",
 			"physFootprint", "memResidentSize", "memAnon", "pid"}
@@ -305,7 +308,7 @@ func (i *instruments) StartSysmontapServer(pid string) (chanMem chan perfEntity.
 
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		mess := m.Obj
-		chanCPUAndMEMData(mess,_outMEM,_outCPU,pid)
+		chanCPUAndMEMData(mess, _outMEM, _outCPU, pid)
 	})
 
 	go func() {
@@ -330,10 +333,10 @@ func (i *instruments) StartSysmontapServer(pid string) (chanMem chan perfEntity.
 		}
 		return
 	}()
-	return _outMEM, _outCPU, cancelFunc, err
+	return _outCPU, _outMEM, cancelFunc, err
 }
 
-func chanCPUAndMEMData(mess interface{},_outMEM chan perfEntity.MEMInfo, _outCPU chan perfEntity.CPUInfo,pid string)  {
+func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCPU chan perfEntity.CPUInfo, pid string) {
 	switch mess.(type) {
 	case []interface{}:
 		var infoCPU perfEntity.CPUInfo
@@ -352,10 +355,10 @@ func chanCPUAndMEMData(mess interface{},_outMEM chan perfEntity.MEMInfo, _outCPU
 				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
 				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
 				// 构建返回信息
-				infoCPU.CPUCount = cpuCount.(int)
+				infoCPU.CPUCount = int(cpuCount.(uint64))
 				infoCPU.SysCpuUsage = cpuTotalLoad.(float64)
 				//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
-				infoCPU.TimeStamp = time.Now().Unix()
+				infoCPU.TimeStamp = time.Now().UnixNano()
 
 				var cpuUsage = 0.0
 				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
@@ -364,20 +367,54 @@ func chanCPUAndMEMData(mess interface{},_outMEM chan perfEntity.MEMInfo, _outCPU
 					cpuUsage = processInfo["cpuUsage"].(float64)
 					infoCPU.CPUUsage = cpuUsage
 					infoCPU.Pid = pid
-					infoCPU.AttrCtxSwitch = processInfo["ctxSwitch"].(int)
-					infoCPU.AttrIntWakeups = processInfo["intWakeups"].(int)
+					infoCPU.AttrCtxSwitch = uIntToInt64(processInfo["ctxSwitch"])
+					infoCPU.AttrIntWakeups = uIntToInt64(processInfo["intWakeups"])
 					_outCPU <- infoCPU
 
-					infoMEM.Vss = processInfo["memVirtualSize"].(int)
-					infoMEM.Rss = processInfo["memResidentSize"].(int)
-					infoMEM.Anon = processInfo["memAnon"].(int)
-					infoMEM.PhysMemory = processInfo["physFootprint"].(int)
-					infoMEM.TimeStamp = time.Now().Unix()
+					infoMEM.Vss = uIntToInt64(processInfo["memVirtualSize"])
+					infoMEM.Rss = uIntToInt64(processInfo["memResidentSize"])
+					infoMEM.Anon = uIntToInt64(processInfo["memAnon"])
+					infoMEM.PhysMemory = uIntToInt64(processInfo["physFootprint"])
+					infoMEM.TimeStamp = time.Now().UnixNano()
 					_outMEM <- infoMEM
 				}
 			}
 		}
 	}
+}
+
+// 获取进程相关信息
+func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
+	if cpuMess == nil {
+		return nil
+	}
+	cpuMessArray, ok := cpuMess.([]interface{})
+	if !ok {
+		return nil
+	}
+	if len(cpuMessArray) != 8 {
+		return nil
+	}
+	if outCpuInfo == nil {
+		outCpuInfo = map[string]interface{}{}
+	}
+	// 虚拟内存
+	outCpuInfo["memVirtualSize"] = cpuMessArray[0]
+	// CPU
+	outCpuInfo["cpuUsage"] = cpuMessArray[1]
+	// 每秒进程的上下文切换次数
+	outCpuInfo["ctxSwitch"] = cpuMessArray[2]
+	// 每秒进程唤醒的线程数
+	outCpuInfo["intWakeups"] = cpuMessArray[3]
+	// 物理内存
+	outCpuInfo["physFootprint"] = cpuMessArray[4]
+
+	outCpuInfo["memResidentSize"] = cpuMessArray[5]
+	// 匿名内存
+	outCpuInfo["memAnon"] = cpuMessArray[6]
+
+	outCpuInfo["pid"] = cpuMessArray[7]
+	return
 }
 
 func (i *instruments) StopSysmontapServer() {
@@ -396,9 +433,12 @@ func (i *instruments) StopSysmontapServer() {
 
 // todo 获取单进程流量情况，看情况做不做
 // 目前只获取到系统全局的流量情况，单进程需要用到set，go没有，并且实际用python测试单进程的流量情况不准
-func (i *instruments) StartNetWorkingServer() (chanNetWorking chan perfEntity.NetWorkingInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetWorking chan perfEntity.NetWorkingInfo, cancel context.CancelFunc, err error) {
 	var id uint32
-	ctx, cancelFunc := context.WithCancel(context.TODO())
+	if ctxParent == nil {
+		return nil, nil, fmt.Errorf("missing context")
+	}
+	ctx, cancelFunc := context.WithCancel(ctxParent)
 	netWorkData := make(chan perfEntity.NetWorkingInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
 		return nil, cancelFunc, err
@@ -415,10 +455,12 @@ func (i *instruments) StartNetWorkingServer() (chanNetWorking chan perfEntity.Ne
 			sendAndReceiveData, ok := receData[1].([]interface{})
 			if ok {
 				var netData perfEntity.NetWorkingInfo
-				netData.RxBytes = sendAndReceiveData[0].(int)
-				netData.RxPackets = sendAndReceiveData[1].(int)
-				netData.TxBytes = sendAndReceiveData[2].(int)
-				netData.TxPackets = sendAndReceiveData[3].(int)
+				// 有时候是uint8，有时候是uint64。。。恶心
+				netData.RxBytes = uIntToInt64(sendAndReceiveData[0])
+				netData.RxPackets = uIntToInt64(sendAndReceiveData[1])
+				netData.TxBytes = uIntToInt64(sendAndReceiveData[2])
+				netData.TxPackets = uIntToInt64(sendAndReceiveData[3])
+				netData.TimeStamp = time.Now().UnixNano()
 				netWorkData <- netData
 			}
 		}
@@ -439,6 +481,22 @@ func (i *instruments) StartNetWorkingServer() (chanNetWorking chan perfEntity.Ne
 	return netWorkData, cancelFunc, err
 }
 
+func uIntToInt64(num interface{}) (cnum int64) {
+	switch num.(type) {
+	case uint64:
+		return int64(num.(uint64))
+	case uint32:
+		return int64(num.(uint32))
+	case uint16:
+		return int64(num.(uint16))
+	case uint8:
+		return int64(num.(uint8))
+	case uint:
+		return int64(num.(uint))
+	}
+	return -1
+}
+
 func (i *instruments) StopNetWorkingServer() {
 	var id uint32
 	id, err := i.requestChannel("com.apple.instruments.server.services.networking")
@@ -453,44 +511,64 @@ func (i *instruments) StopNetWorkingServer() {
 	}
 }
 
-func (i *instruments) StartOpenglServer() (chanFPS chan perfEntity.FPSInfo,chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan perfEntity.FPSInfo, chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error) {
 	var id uint32
-	ctx, cancelFunc := context.WithCancel(context.TODO())
-	_outFPS := make(chan interface{})
-	_outGPU := make(chan interface{})
+	if ctxParent == nil {
+		return nil, nil, nil, fmt.Errorf("missing context")
+	}
+	ctx, cancelFunc := context.WithCancel(ctxParent)
+	_outFPS := make(chan perfEntity.FPSInfo)
+	_outGPU := make(chan perfEntity.GPUInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.graphics.opengl"); err != nil {
-		return nil,nil, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	selector := "availableStatistics"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return nil,nil, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	selector = "setSamplingRate:"
-	if err = args.AppendObject(10); err != nil {
-		return nil,nil, cancelFunc, err
+	if err = args.AppendObject(0.0); err != nil {
+		return nil, nil, cancelFunc, err
 	}
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return nil,nil, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	selector = "startSamplingAtTimeInterval:processIdentifier:"
 	args = libimobiledevice.NewAuxBuffer()
 	if err = args.AppendObject(0); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 	if err = args.AppendObject(0); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		_out <- m.Obj
+		mess := m.Obj
+		var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
+		var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
+		var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
+
+		var infoGPU perfEntity.GPUInfo
+		infoGPU.DeviceUtilization = uIntToInt64(deviceUtilization)
+		infoGPU.TilerUtilization = uIntToInt64(tilerUtilization)
+		infoGPU.RendererUtilization = uIntToInt64(rendererUtilization)
+		infoGPU.TimeStamp = time.Now().UnixNano()
+		_outGPU <- infoGPU
+
+		var infoFPS perfEntity.FPSInfo
+		var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
+		infoFPS.FPS = int(uIntToInt64(fps))
+		infoFPS.TimeStamp = time.Now().UnixNano()
+		_outFPS <- infoFPS
+
 	})
 	go func() {
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
@@ -498,14 +576,23 @@ func (i *instruments) StartOpenglServer() (chanFPS chan perfEntity.FPSInfo,chanG
 		})
 		select {
 		case <-ctx.Done():
-			_, isOpen := <-_out
-			if isOpen {
-				close(_out)
+			var isOpen bool
+			if _outGPU != nil {
+				_, isOpen = <-_outGPU
+				if isOpen {
+					close(_outGPU)
+				}
+			}
+			if _outFPS != nil {
+				_, isOpen = <-_outFPS
+				if isOpen {
+					close(_outFPS)
+				}
 			}
 		}
 		return
 	}()
-	return _out, cancelFunc, err
+	return _outFPS, _outGPU, cancelFunc, err
 }
 
 func (i *instruments) StopOpenglServer() {

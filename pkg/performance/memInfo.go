@@ -1,4 +1,4 @@
-package perfEntity
+package perfmorance
 
 import (
 	"encoding/json"
@@ -8,14 +8,14 @@ import (
 
 type MEMInfo struct {
 	// 虚拟内存
-	Anon 			int `json:"anon,omitempty"`
+	Anon int64 `json:"anon,omitempty"`
 	// 物理内存
-	PhysMemory 		int `json:"physMemory,omitempty"`
+	PhysMemory int64 `json:"physMemory,omitempty"`
 	// 总内存
-	Rss 			int `json:"rss,omitempty"`
+	Rss int64 `json:"rss,omitempty"`
 	// 虚拟内存
-	Vss       		int `json:"vss,omitempty"`
-	TimeStamp       int64 `json:"time,omitempty"`
+	Vss       int64 `json:"vss,omitempty"`
+	TimeStamp int64 `json:"timeStamp,omitempty"`
 }
 
 func (memInfo MEMInfo) ToString() string {

@@ -5,17 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
-	"path"
-	"strings"
 	"github.com/electricbubble/gidevice/pkg/ipa"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
+	"github.com/electricbubble/gidevice/pkg/performance"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
-	"github.com/electricbubble/gidevice/pkg/performance"
-	"syscall"
+	"os"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -593,381 +591,140 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 	return d.crashReportMover.Move(hostDir, opts...)
 }
 
-func (d *device) GetPerfmon(pid string, opts ...PerfmonOption) (out chan map[string]interface{}, outCancel context.CancelFunc, err error) {
-	var chanCPU chan map[string]interface{}
-	var chanMEM chan map[string]interface{}
-	var chanFPS chan map[string]interface{}
-	var chanGPU chan map[string]interface{}
-	var chanNetWorking chan map[string]interface{}
-
+func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMonData, outCancel context.CancelFunc, perfErr error) {
 	if d.lockdown == nil {
-		d.lockdownService()
+		if _, err := d.lockdownService(); err != nil {
+			return nil, nil, err
+		}
 	}
-
 	perfmonOpts := new(perfmonOption)
 	if len(opts) == 0 {
 		perfmonOpts = nil
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("parameter error,please enter relevant parameters")
 	} else {
 		for _, optFunc := range opts {
 			optFunc(perfmonOpts)
 		}
 	}
 
+	var err error
+
+	var instruments Instruments
 	ctx, cancel := context.WithCancel(context.Background())
 
-	_, OKCPU := perfmonOpts.opts["CPU"]
-	_, okMEM := perfmonOpts.opts["MEM"]
+	chanCPU := make(chan perfmorance.CPUInfo)
+	chanMEM := make(chan perfmorance.MEMInfo)
+	var cancelSysmontap context.CancelFunc
 
-	if OKCPU && chanGPU == nil {
-		chanCPU = make(chan map[string]interface{})
-	}
-	if okMEM && chanFPS == nil {
-		chanMEM = make(chan map[string]interface{})
-	}
-
-	if chanCPU != nil || chanMEM != nil {
-		if err := d.iterCpuAndMemory(chanCPU, chanMEM, pid); err != nil {
+	if perfmonOpts.flagCPU || perfmonOpts.flagMEM {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanCPU, chanMEM, cancelSysmontap, err = instruments.StartSysmontapServer(perfmonOpts.pid, ctx)
+		if err != nil {
+			cancelSysmontap()
 			return nil, cancel, err
 		}
 	}
 
-	_, okGPU := perfmonOpts.opts["GPU"]
-	_, okFPS := perfmonOpts.opts["FPS"]
+	chanFPS := make(chan perfmorance.FPSInfo)
+	chanGPU := make(chan perfmorance.GPUInfo)
+	var cancelOpengl context.CancelFunc
 
-	if okGPU && chanGPU == nil {
-		chanGPU = make(chan map[string]interface{})
-	}
-	if okFPS && chanFPS == nil {
-		chanFPS = make(chan map[string]interface{})
-	}
-	if chanFPS != nil || chanGPU != nil {
-		if err := d.iterGPUAndFPS(chanGPU, chanFPS); err != nil {
+	if perfmonOpts.flagGPU || perfmonOpts.flagFPS {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanFPS, chanGPU, cancelOpengl, err = instruments.StartOpenglServer(ctx)
+		if err != nil {
+			cancelOpengl()
 			return nil, cancel, err
 		}
 	}
 
-	_, okNetWorking := perfmonOpts.opts["NetWorking"]
-	if okNetWorking {
-		chanNetWorking = make(chan map[string]interface{})
-		if err := d.iterNetWork(chanNetWorking); err != nil {
-			return nil, cancel,err
+	chanNetWork := make(chan perfmorance.NetWorkingInfo)
+	var cancelNetWork context.CancelFunc
+	if perfmonOpts.flagNetWork {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanNetWork, cancelNetWork, err = instruments.StartNetWorkingServer(ctx)
+		if err != nil {
+			cancelNetWork()
+			return nil, cancel, err
 		}
 	}
 
-	if out == nil {
-		out = make(chan map[string]interface{})
-	}
-	result := make(map[string]interface{})
+	result := make(chan perfmorance.PerfMonData)
 	go func() {
 		for {
+			var perfData perfmorance.PerfMonData
 			select {
-			case v := <-chanCPU:
-				result["CPU"] = v
-			case v := <-chanMEM:
-				result["MEM"] = v
-			case v := <-chanFPS:
-				result["FPS"] = v
-			case v := <-chanGPU:
-				result["GPU"] = v
-			case v := <-chanNetWorking:
-				result["NetWorking"] = v
+			case v, ok := <-chanCPU:
+				if perfmonOpts.flagCPU && ok {
+					perfData.CPUInfo = &v
+				}
+			case v, ok := <-chanMEM:
+				if perfmonOpts.flagMEM && ok {
+					perfData.MEMInfo = &v
+				}
+			case v, ok := <-chanFPS:
+
+				if perfmonOpts.flagFPS && ok {
+					perfData.FPSInfo = &v
+				}
+			case v, ok := <-chanGPU:
+				if perfmonOpts.flagGPU && ok {
+					perfData.GPUInfo = &v
+				}
+			case v, ok := <-chanNetWork:
+				if perfmonOpts.flagNetWork && ok {
+					perfData.NetWorkingInfo = &v
+				}
 			case <-ctx.Done():
-				d.StopGetPerfmon()
+				close(chanFPS)
+				close(chanGPU)
+				close(chanMEM)
+				close(chanCPU)
+				close(chanNetWork)
 			}
-			out <- result
+			result <- perfData
 		}
 	}()
-	return
+	return result, cancel, err
 }
 
-func (d *device) StopGetPerfmon(cancel context.CancelFunc) {
+func (d *device) StopGetPerfmon(opts ...PerfmonOption) (err error) {
+
 	if d.instruments == nil {
-		return
+		_, err := d.instrumentsService()
+		if err != nil {
+			return err
+		}
 	}
+
 	perfmonOpts := new(perfmonOption)
 	if len(opts) == 0 {
 		perfmonOpts = nil
+		return fmt.Errorf("parameter error,please enter relevant parameters")
 	} else {
 		for _, optFunc := range opts {
 			optFunc(perfmonOpts)
 		}
 	}
-	_, OKCPU := perfmonOpts.opts["CPU"]
-	_, okMEM := perfmonOpts.opts["MEM"]
-	_, okGPU := perfmonOpts.opts["GPU"]
-	_, okFPS := perfmonOpts.opts["FPS"]
-	_, okNetWorking := perfmonOpts.opts["NetWorking"]
-	if OKCPU || okMEM {
-		d.stopCPUAndMEM()
+	if perfmonOpts.flagCPU || perfmonOpts.flagMEM {
+		d.instruments.StopSysmontapServer()
 	}
-	if okGPU || okFPS {
-		d.stopGPUAndFPS()
+	if perfmonOpts.flagGPU || perfmonOpts.flagFPS {
+		d.instruments.StopOpenglServer()
 	}
-	if okNetWorking {
-		d.stopNetWorking()
+	if perfmonOpts.flagNetWork {
+		d.instruments.StopNetWorkingServer()
 	}
-
-}
-
-func (d *device) stopGPUAndFPS() {
-	if d.instruments == nil {
-		return
-	}
-	d.instruments.StopOpenglServer()
-}
-
-func (d *device) stopCPUAndMEM() {
-	if d.instruments == nil {
-		return
-	}
-	d.instruments.StopSysmontapServer()
-}
-
-func (d *device) stopNetWorking() {
-	if d.instruments == nil {
-		return
-	}
-	d.instruments.StopNetWorkingServer()
-}
-
-func (d *device) iterGPUAndFPS(outGPU chan perfEntity.GPUInfo, outFPS chan perfEntity.FPSInfo,ctxParent context.Context) (cancelFunc context.CancelFunc,err error) {
-	if outFPS==nil && outGPU==nil {
-		return nil, fmt.Errorf("no parameter entered")
-	}
-	var ctx context.Context
-	var iterCancel context.CancelFunc
-	if ctxParent==nil {
-		ctx, iterCancel = context.WithCancel(context.TODO())
-	}else {
-		ctx, iterCancel = context.WithCancel(ctxParent)
-	}
-	instruments, err := d.lockdown.InstrumentsService()
-	if err != nil {
-		return iterCancel,err
-	}
-	outData, cancel, err := instruments.StartOpenglServer()
-	if err != nil {
-		return iterCancel,err
-	}
-
-	go func() {
-		for mess := range outData {
-			var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
-			var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
-			var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
-			if deviceUtilization == nil || tilerUtilization == nil || rendererUtilization == nil {
-				continue
-			}
-			if outGPU != nil {
-				var infoGPU perfEntity.GPUInfo
-				infoGPU.DeviceUtilization = deviceUtilization.(int)
-				infoGPU.TilerUtilization = tilerUtilization.(int)
-				infoGPU.RendererUtilization = rendererUtilization.(int)
-				infoGPU.TimeStamp = time.Now().Unix()
-				outGPU <- infoGPU
-			}
-			if outFPS != nil {
-				var infoFPS perfEntity.FPSInfo
-				var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
-				infoFPS.FPS = fps.(int)
-				infoFPS.TimeStamp = time.Now().Unix()
-				outFPS <- infoFPS
-			}
-		}
-	}()
-	go func() {
-		select {
-		case <-ctx.Done():
-			if outGPU != nil {
-				close(outGPU)
-			}
-			if outFPS != nil {
-				close(outFPS)
-			}
-			// 关闭chan
-			cancel()
-			return
-		}
-	}()
-	return iterCancel,nil
-}
-
-func (d *device) iterNetWork(outNetWorking chan perfEntity.NetWorkingInfo,ctxParent context.Context) (cancelFunc context.CancelFunc,err error) {
-	if outNetWorking==nil {
-		return nil,fmt.Errorf("no parameter entered")
-	}
-	var ctx context.Context
-	var iterCancel context.CancelFunc
-	if ctxParent==nil {
-		ctx, iterCancel = context.WithCancel(context.TODO())
-	}else {
-		ctx, iterCancel = context.WithCancel(ctxParent)
-	}
-
-	instruments, err := d.lockdown.InstrumentsService()
-	if err!=nil {
-		return iterCancel, err
-	}
-	outData, cancel, err := instruments.StartNetWorkingServer()
-
-	if err != nil {
-		return iterCancel,err
-	}
-
-	go func() {
-		for data := range outData {
-			var netWorking perfEntity.NetWorkingInfo
-			netWorking.TimeStamp = time.Now().Unix()
-			netWorking.RxBytes
-				outNetWorking <- data
-		}
-	}()
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			if outNetWorking != nil {
-				close(outNetWorking)
-			}
-			cancel()
-			return
-		}
-	}()
-	return iterCancel,nil
-}
-
-func (d *device) iterCpuAndMemory(cpuInfo chan CPUInfo, outMEM chan map[string]interface{}, pid string) (err error) {
-	instruments, err := d.lockdown.InstrumentsService()
-	if err != nil {
-		return err
-	}
-	outData, cancel, err := instruments.StartSysmontapServer()
-	if err != nil {
-		return err
-	}
-	done := make(chan os.Signal, syscall.SIGTERM)
-
-	signal.Notify(done, os.Interrupt)
-	var finalCpuInfo map[string]interface{}
-
-	go func() {
-		for mess := range outData {
-			switch mess.(type) {
-			case []interface{}:
-
-				messArray := mess.([]interface{})
-				if len(messArray) != 2 {
-					continue
-				}
-				var sinfo = messArray[0].(map[string]interface{})
-				var pinfolist = messArray[1].(map[string]interface{})
-				if sinfo["CPUCount"] == nil {
-					var temp = sinfo
-					sinfo = pinfolist
-					pinfolist = temp
-				}
-				if sinfo["CPUCount"] == nil || pinfolist["Processes"] == nil {
-					continue
-				}
-				var cpuCount = sinfo["CPUCount"]
-				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
-				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
-				if outCPU != nil {
-					// 构建返回信息
-					finalCpuInfo = make(map[string]interface{})
-					finalCpuInfo["type"] = "process"
-					finalCpuInfo["cpuCount"] = cpuCount
-					finalCpuInfo["sysCpuUsage"] = cpuTotalLoad
-					//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
-					finalCpuInfo["time"] = time.Now().Unix()
-					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
-				}
-
-				var cpuUsage = 0.0
-				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
-				if pidMess != nil {
-					processInfo := sysmonPorceAttrs(pidMess)
-					if finalCpuInfo != nil {
-						cpuUsage = processInfo["cpuUsage"].(float64)
-						finalCpuInfo["cpuUsage"] = cpuUsage
-						finalCpuInfo["pid"] = pid
-						finalCpuInfo["attrCtxSwitch"] = processInfo["ctxSwitch"]
-						finalCpuInfo["attrIntWakeups"] = processInfo["intWakeups"]
-						outCPU <- finalCpuInfo
-					}
-					if outMEM != nil {
-						finalMEMInfo := make(map[string]interface{})
-						finalMEMInfo["vss"] = processInfo["memVirtualSize"]
-						finalMEMInfo["rss"] = processInfo["memResidentSize"]
-						finalMEMInfo["anon"] = processInfo["memAnon"]
-						finalMEMInfo["physMemory"] = processInfo["physFootprint"]
-						finalMEMInfo["time"] = time.Now().Unix()
-						outMEM <- finalMEMInfo
-					}
-				} else {
-					//finalCpuInfo["attrSystemInfo"] = sysCpuUsage
-					finalCpuInfo["cpuUsage"] = -1.0
-					finalCpuInfo["pid"] = pid
-					finalCpuInfo["attrCtxSwitch"] = -1
-					finalCpuInfo["attrIntWakeups"] = -1
-					outCPU <- finalCpuInfo
-				}
-			default:
-				//fmt.Println(i)
-				continue
-			}
-		}
-		done <- os.Interrupt
-	}()
-	go func() {
-		select {
-		case <-done:
-			if outCPU != nil {
-				close(outCPU)
-			}
-			if outMEM != nil {
-				close(outMEM)
-			}
-			cancel()
-			return
-		}
-	}()
-	return nil
-}
-
-// 获取进程相关信息
-func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
-	if cpuMess == nil {
-		return nil
-	}
-	cpuMessArray, ok := cpuMess.([]interface{})
-	if !ok {
-		return nil
-	}
-	if len(cpuMessArray) != 8 {
-		return nil
-	}
-	if outCpuInfo == nil {
-		outCpuInfo = map[string]interface{}{}
-	}
-	// 虚拟内存
-	outCpuInfo["memVirtualSize"] = cpuMessArray[0]
-	// CPU
-	outCpuInfo["cpuUsage"] = cpuMessArray[1]
-	// 每秒进程的上下文切换次数
-	outCpuInfo["ctxSwitch"] = cpuMessArray[2]
-	// 每秒进程唤醒的线程数
-	outCpuInfo["intWakeups"] = cpuMessArray[3]
-	// 物理内存
-	outCpuInfo["physFootprint"] = cpuMessArray[4]
-
-	outCpuInfo["memResidentSize"] = cpuMessArray[5]
-	// 匿名内存
-	outCpuInfo["memAnon"] = cpuMessArray[6]
-
-	outCpuInfo["pid"] = cpuMessArray[7]
-	return
+	return err
 }
 
 func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {

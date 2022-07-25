@@ -1,4 +1,4 @@
-package perfEntity
+package perfmorance
 
 import (
 	"encoding/json"
@@ -8,12 +8,12 @@ import (
 
 type GPUInfo struct {
 	// 设备利用率
-	DeviceUtilization 		int `json:"Device Utilization,omitempty"`
+	DeviceUtilization int64 `json:"deviceUtilization,omitempty"`
 	// 渲染器利用率
-	RendererUtilization 	int `json:"Renderer Utilization,omitempty"`
+	RendererUtilization int64 `json:"rendererUtilization,omitempty"`
 	// 处理顶点的GPU时间占比
-	TilerUtilization 		int   `json:"Tiler Utilization,omitempty"`
-	TimeStamp        		int64 `json:"time,omitempty"`
+	TilerUtilization int64 `json:"tilerUtilization,omitempty"`
+	TimeStamp        int64 `json:"timeStamp,omitempty"`
 }
 
 func (gpuInfo GPUInfo) ToString() string {

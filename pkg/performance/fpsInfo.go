@@ -1,4 +1,4 @@
-package perfEntity
+package perfmorance
 
 import (
 	"encoding/json"
@@ -7,8 +7,8 @@ import (
 )
 
 type FPSInfo struct {
-	FPS       		int `json:"fps,omitempty"`
-	TimeStamp       int64 `json:"time,omitempty"`
+	FPS       int   `json:"FPS,omitempty"`
+	TimeStamp int64 `json:"timeStamp,omitempty"`
 }
 
 func (fpsInfo FPSInfo) ToString() string {

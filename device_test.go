@@ -1,7 +1,6 @@
 package giDevice
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -158,16 +157,36 @@ func Test_device_Shutdown(t *testing.T) {
 func Test_device_Perf(t *testing.T) {
 	//setupDevice(t)
 	setupLockdownSrv(t)
-	outData, _ := dev.GetPerfmon("0", WithPerfmonOptions("GPU", "FPS", "CPU", "MEM", "NetWorking"))
-	for data := range outData {
-		b, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("json.Marshal failed:", err)
-			return
-		}
 
-		fmt.Println(string(b))
-		//fmt.Println(data)
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt, os.Kill)
+
+	outData, cannel, err := dev.GetPerfmon(
+		WithPerfPidOpts("0"),
+		WithPerfCPUOpts(true),
+		WithPerfFPSOpts(true),
+		WithPerfNetWorkOpts(true))
+	if err != nil {
+		os.Exit(0)
+	}
+	go func() {
+		for data := range outData {
+			if !data.IsDataNull() {
+				//fmt.Println(data.ToJson())
+				//fmt.Println(data.ToFormat())
+				fmt.Println(data.ToString())
+			}
+		}
+	}()
+	for {
+		select {
+		case <-c:
+			cannel()
+			dev.StopGetPerfmon(
+				WithPerfCPUOpts(true),
+				WithPerfFPSOpts(true),
+				WithPerfNetWorkOpts(true))
+		}
 	}
 }
 
