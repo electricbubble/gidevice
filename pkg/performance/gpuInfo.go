@@ -18,7 +18,7 @@ type GPUInfo struct {
 
 func (gpuInfo GPUInfo) ToString() string {
 	var s strings.Builder
-	s.WriteString(fmt.Sprintf("Device Utilization:%d Renderer Utilization:%d Tiler Utilization:%d time:%d\n", gpuInfo.DeviceUtilization, gpuInfo.RendererUtilization, gpuInfo.TilerUtilization, gpuInfo.TimeStamp))
+	s.WriteString(fmt.Sprintf("deviceUtilization:%d rendererUtilization:%d tilerUtilization:%d timeStamp:%d\n", gpuInfo.DeviceUtilization, gpuInfo.RendererUtilization, gpuInfo.TilerUtilization, gpuInfo.TimeStamp))
 	return s.String()
 }
 

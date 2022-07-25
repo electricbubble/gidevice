@@ -16,7 +16,7 @@ type NetWorkingInfo struct {
 
 func (netWorkInfo NetWorkingInfo) ToString() string {
 	var s strings.Builder
-	s.WriteString(fmt.Sprintf("rx.bytes:%d rx.packets:%d tx.bytes:%d tx.packets:%d time:%d\n", netWorkInfo.RxBytes, netWorkInfo.RxPackets, netWorkInfo.TxBytes, netWorkInfo.TxPackets, netWorkInfo.TimeStamp))
+	s.WriteString(fmt.Sprintf("rxBytes:%d rxPackets:%d txBytes:%d txPackets:%d timeStamp:%d\n", netWorkInfo.RxBytes, netWorkInfo.RxPackets, netWorkInfo.TxBytes, netWorkInfo.TxPackets, netWorkInfo.TimeStamp))
 	return s.String()
 }
 
