@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	perfEntity "github.com/electricbubble/gidevice/pkg/performance"
+	"time"
+
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
@@ -258,12 +261,13 @@ func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DT
 	i.client.RegisterCallback(obj, cb)
 }
 
-func (i *instruments) StartSysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+func (i *instruments) StartSysmontapServer(pid string) (chanMem chan perfEntity.MEMInfo, chanCPU chan perfEntity.CPUInfo, cancel context.CancelFunc, err error) {
 	var id uint32
-	_, cancelFunc := context.WithCancel(context.TODO())
-	_out := make(chan interface{})
+	ctx, cancelFunc := context.WithCancel(context.TODO())
+	_outMEM := make(chan perfEntity.MEMInfo)
+	_outCPU := make(chan perfEntity.CPUInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.sysmontap"); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	selector := "setConfig:"
@@ -274,16 +278,7 @@ func (i *instruments) StartSysmontapServer() (out <-chan interface{}, cancel con
 	{
 		config["bm"] = 0
 		config["cpuUsage"] = true
-		// 输出所有进程信息字段，字段顺序与自定义相同（全量自字段，按需使用）
-		//config["procAttrs"] = []string{
-		//	"memVirtualSize", "cpuUsage", "procStatus", "appSleep",
-		//	"uid", "vmPageIns", "memRShrd", "ctxSwitch", "memCompressed",
-		//	"intWakeups", "cpuTotalSystem", "responsiblePID", "physFootprint",
-		//	"cpuTotalUser", "sysCallsUnix", "memResidentSize", "sysCallsMach",
-		//	"memPurgeable", "diskBytesRead", "machPortCount", "__suddenTerm", "__arch",
-		//	"memRPrvt", "msgSent", "ppid", "threadCount", "memAnon", "diskBytesWritten",
-		//	"pgid", "faults", "msgRecv", "__restricted", "pid", "__sandbox"}
-
+		
 		config["procAttrs"] = []string{
 			"memVirtualSize", "cpuUsage", "ctxSwitch", "intWakeups",
 			"physFootprint", "memResidentSize", "memAnon", "pid"}
@@ -299,31 +294,90 @@ func (i *instruments) StartSysmontapServer() (out <-chan interface{}, cancel con
 
 	args.AppendObject(config)
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
-	ctx, cancelFunc := context.WithCancel(context.TODO())
 	selector = "start"
 	args = libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return _out, cancelFunc, err
+		return nil, nil, cancelFunc, err
 	}
 
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		_out <- m.Obj
+		mess := m.Obj
+		chanCPUAndMEMData(mess,_outMEM,_outCPU,pid)
 	})
 
 	go func() {
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
 			cancelFunc()
 		})
-
-		<-ctx.Done()
-		// time.Sleep(time.Second)
-		close(_out)
+		select {
+		case <-ctx.Done():
+			var isOpen bool
+			if _outCPU != nil {
+				_, isOpen = <-_outMEM
+				if isOpen {
+					close(_outMEM)
+				}
+			}
+			if _outMEM != nil {
+				_, isOpen = <-_outCPU
+				if isOpen {
+					close(_outCPU)
+				}
+			}
+		}
 		return
 	}()
-	return _out, cancelFunc, err
+	return _outMEM, _outCPU, cancelFunc, err
+}
+
+func chanCPUAndMEMData(mess interface{},_outMEM chan perfEntity.MEMInfo, _outCPU chan perfEntity.CPUInfo,pid string)  {
+	switch mess.(type) {
+	case []interface{}:
+		var infoCPU perfEntity.CPUInfo
+		var infoMEM perfEntity.MEMInfo
+		messArray := mess.([]interface{})
+		if len(messArray) == 2 {
+			var sinfo = messArray[0].(map[string]interface{})
+			var pinfolist = messArray[1].(map[string]interface{})
+			if sinfo["CPUCount"] == nil {
+				var temp = sinfo
+				sinfo = pinfolist
+				pinfolist = temp
+			}
+			if sinfo["CPUCount"] != nil && pinfolist["Processes"] != nil {
+				var cpuCount = sinfo["CPUCount"]
+				var sysCpuUsage = sinfo["SystemCPUUsage"].(map[string]interface{})
+				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
+				// 构建返回信息
+				infoCPU.CPUCount = cpuCount.(int)
+				infoCPU.SysCpuUsage = cpuTotalLoad.(float64)
+				//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
+				infoCPU.TimeStamp = time.Now().Unix()
+
+				var cpuUsage = 0.0
+				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
+				if pidMess != nil {
+					processInfo := sysmonPorceAttrs(pidMess)
+					cpuUsage = processInfo["cpuUsage"].(float64)
+					infoCPU.CPUUsage = cpuUsage
+					infoCPU.Pid = pid
+					infoCPU.AttrCtxSwitch = processInfo["ctxSwitch"].(int)
+					infoCPU.AttrIntWakeups = processInfo["intWakeups"].(int)
+					_outCPU <- infoCPU
+
+					infoMEM.Vss = processInfo["memVirtualSize"].(int)
+					infoMEM.Rss = processInfo["memResidentSize"].(int)
+					infoMEM.Anon = processInfo["memAnon"].(int)
+					infoMEM.PhysMemory = processInfo["physFootprint"].(int)
+					infoMEM.TimeStamp = time.Now().Unix()
+					_outMEM <- infoMEM
+				}
+			}
+		}
+	}
 }
 
 func (i *instruments) StopSysmontapServer() {
@@ -340,30 +394,32 @@ func (i *instruments) StopSysmontapServer() {
 	return
 }
 
-func (i *instruments) StartNetWorkingServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error) {
+// todo 获取单进程流量情况，看情况做不做
+// 目前只获取到系统全局的流量情况，单进程需要用到set，go没有，并且实际用python测试单进程的流量情况不准
+func (i *instruments) StartNetWorkingServer() (chanNetWorking chan perfEntity.NetWorkingInfo, cancel context.CancelFunc, err error) {
 	var id uint32
 	ctx, cancelFunc := context.WithCancel(context.TODO())
-	netWorkData := make(chan map[string]interface{})
+	netWorkData := make(chan perfEntity.NetWorkingInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
-		return netWorkData, cancelFunc, err
+		return nil, cancelFunc, err
 	}
 	selector := "startMonitoring"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return netWorkData, cancelFunc, err
+		return nil, cancelFunc, err
 	}
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		receData, ok := m.Obj.([]interface{})
 		if ok && len(receData) == 2 {
 			sendAndReceiveData, ok := receData[1].([]interface{})
 			if ok {
-				data := make(map[string]interface{})
-				data["rx.packets"] = sendAndReceiveData[0]
-				data["rx.bytes"] = sendAndReceiveData[1]
-				data["tx.packets"] = sendAndReceiveData[2]
-				data["tx.bytes"] = sendAndReceiveData[3]
-				netWorkData <- data
+				var netData perfEntity.NetWorkingInfo
+				netData.RxBytes = sendAndReceiveData[0].(int)
+				netData.RxPackets = sendAndReceiveData[1].(int)
+				netData.TxBytes = sendAndReceiveData[2].(int)
+				netData.TxPackets = sendAndReceiveData[3].(int)
+				netWorkData <- netData
 			}
 		}
 	})
@@ -371,10 +427,13 @@ func (i *instruments) StartNetWorkingServer() (out <-chan map[string]interface{}
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
 			cancelFunc()
 		})
-
-		<-ctx.Done()
-		// time.Sleep(time.Second)
-		close(netWorkData)
+		select {
+		case <-ctx.Done():
+			_, isOpen := <-netWorkData
+			if isOpen {
+				close(netWorkData)
+			}
+		}
 		return
 	}()
 	return netWorkData, cancelFunc, err
@@ -394,27 +453,28 @@ func (i *instruments) StopNetWorkingServer() {
 	}
 }
 
-func (i *instruments) StartOpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error) {
+func (i *instruments) StartOpenglServer() (chanFPS chan perfEntity.FPSInfo,chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error) {
 	var id uint32
 	ctx, cancelFunc := context.WithCancel(context.TODO())
-	_out := make(chan interface{})
+	_outFPS := make(chan interface{})
+	_outGPU := make(chan interface{})
 	if id, err = i.requestChannel("com.apple.instruments.server.services.graphics.opengl"); err != nil {
-		return _out, cancelFunc, err
+		return nil,nil, cancelFunc, err
 	}
 
 	selector := "availableStatistics"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return _out, cancelFunc, err
+		return nil,nil, cancelFunc, err
 	}
 
 	selector = "setSamplingRate:"
 	if err = args.AppendObject(10); err != nil {
-		return _out, cancelFunc, err
+		return nil,nil, cancelFunc, err
 	}
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return _out, cancelFunc, err
+		return nil,nil, cancelFunc, err
 	}
 
 	selector = "startSamplingAtTimeInterval:processIdentifier:"
@@ -436,8 +496,13 @@ func (i *instruments) StartOpenglServer() (out <-chan interface{}, cancel contex
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
 			cancelFunc()
 		})
-		<-ctx.Done()
-		close(_out)
+		select {
+		case <-ctx.Done():
+			_, isOpen := <-_out
+			if isOpen {
+				close(_out)
+			}
+		}
 		return
 	}()
 	return _out, cancelFunc, err

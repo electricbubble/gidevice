@@ -1,4 +1,4 @@
-package entity
+package perfEntity
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ type NetWorkingInfo struct {
 	RxPackets int `json:"rx.packets,omitempty"`
 	TxBytes   int `json:"tx.bytes,omitempty"`
 	TxPackets int `json:"tx.packets,omitempty"`
-	TimeStamp int `json:"time,omitempty"`
+	TimeStamp int64 `json:"time,omitempty"`
 }
 
 func (gpuInfo NetWorkingInfo) ToString() string {

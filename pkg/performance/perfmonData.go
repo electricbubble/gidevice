@@ -14,7 +14,7 @@
  *  limitations under the License.
  *
  */
-package entity
+package perfEntity
 
 import (
 	"encoding/json"

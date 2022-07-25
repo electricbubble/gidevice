@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	perfEntity "github.com/electricbubble/gidevice/pkg/performance"
 	"log"
 	"time"
 
@@ -157,16 +158,16 @@ type Instruments interface {
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 
-	StartOpenglServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+	StartOpenglServer() (chanFPS chan perfEntity.FPSInfo,chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error)
 
 	StopOpenglServer()
 
-	StartSysmontapServer() (out <-chan interface{}, cancel context.CancelFunc, err error)
+	StartSysmontapServer(pid string) (chanMem chan perfEntity.MEMInfo,chanCPU chan perfEntity.CPUInfo, cancel context.CancelFunc, err error)
 
 	StopSysmontapServer()
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
 
-	StartNetWorkingServer() (out <-chan map[string]interface{}, cancel context.CancelFunc, err error)
+	StartNetWorkingServer() (chanNetWorking chan perfEntity.NetWorkingInfo, cancel context.CancelFunc, err error)
 
 	StopNetWorkingServer()
 }

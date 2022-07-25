@@ -1,4 +1,4 @@
-package entity
+package perfEntity
 
 import (
 	"encoding/json"
@@ -8,19 +8,19 @@ import (
 
 type CPUInfo struct {
 	// 上下文切换数
-	AttrCtxSwitch int `json:"attrCtxSwitch,omitempty"`
+	AttrCtxSwitch 			int `json:"attrCtxSwitch,omitempty"`
 	// 唤醒数
-	AttrIntWakeups int `json:"attrIntWakeups,omitempty"`
+	AttrIntWakeups		 	int `json:"attrIntWakeups,omitempty"`
 	// CPU总数
-	CPUCount int `json:"cpuCount,omitempty"`
+	CPUCount 				int `json:"cpuCount,omitempty"`
 
-	Pid string `json:"pid,omitempty"`
+	Pid 					string `json:"pid,omitempty"`
 
-	TimeStamp int `json:"time,omitempty"`
+	TimeStamp        		int64 `json:"time,omitempty"`
 	// 单个进程的CPU使用率
-	CPUUsage float64 `json:"cpuUsage,omitempty"`
+	CPUUsage 				float64 `json:"cpuUsage,omitempty"`
 	// 系统总体CPU占用
-	SysCpuUsage float64 `json:"sysCpuUsage,omitempty"`
+	SysCpuUsage 			float64 `json:"sysCpuUsage,omitempty"`
 }
 
 func (cpuInfo CPUInfo) ToString() string {
