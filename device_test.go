@@ -161,31 +161,44 @@ func Test_device_Perf(t *testing.T) {
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, os.Kill)
 
-	outData, cannel, err := dev.GetPerfmon(
+	var opts = []PerfmonOption{
 		WithPerfPidOpts("0"),
 		WithPerfCPUOpts(true),
 		WithPerfFPSOpts(true),
-		WithPerfNetWorkOpts(true))
+		WithPerfNetWorkOpts(true),
+	}
+
+	outData, cannel, err := dev.GetPerfmon(opts...)
 	if err != nil {
 		os.Exit(0)
 	}
-	go func() {
-		for data := range outData {
-			if !data.IsDataNull() {
-				//fmt.Println(data.ToJson())
-				//fmt.Println(data.ToFormat())
-				fmt.Println(data.ToString())
-			}
+	var timeLast = time.Now().Unix()
+	for  {
+		data ,ok := <-outData
+		if !ok {
+			fmt.Println("end get perfmon data")
+			return
 		}
-	}()
+		if !data.IsDataNull() {
+			//fmt.Println(data.ToJson())
+			//fmt.Println(data.ToFormat())
+			fmt.Println(data.ToString())
+		}
+		if time.Now().Unix()-timeLast >6 {
+			if err:=dev.StopGetPerfmon(opts...);err != nil {
+				fmt.Println(err)
+			}
+			cannel()
+		}
+	}
 	for {
 		select {
 		case <-c:
+			err:=dev.StopGetPerfmon(opts...)
+			if err!=nil {
+				fmt.Println(err)
+			}
 			cannel()
-			dev.StopGetPerfmon(
-				WithPerfCPUOpts(true),
-				WithPerfFPSOpts(true),
-				WithPerfNetWorkOpts(true))
 		}
 	}
 }

@@ -307,8 +307,13 @@ func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context
 	}
 
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		mess := m.Obj
-		chanCPUAndMEMData(mess, _outMEM, _outCPU, pid)
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			mess := m.Obj
+			chanCPUAndMEMData(mess, _outMEM, _outCPU, pid)
+		}
 	})
 
 	go func() {
@@ -377,6 +382,7 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCP
 					infoMEM.PhysMemory = uIntToInt64(processInfo["physFootprint"])
 					infoMEM.TimeStamp = time.Now().UnixNano()
 					_outMEM <- infoMEM
+
 				}
 			}
 		}
@@ -417,18 +423,18 @@ func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
 	return
 }
 
-func (i *instruments) StopSysmontapServer() {
+func (i *instruments) StopSysmontapServer() (err error) {
 	id, err := i.requestChannel("com.apple.instruments.server.services.sysmontap")
 	if err != nil {
-		return
+		return err
 	}
 	selector := "stop"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return
+		return err
 	}
-	return
+	return nil
 }
 
 // todo 获取单进程流量情况，看情况做不做
@@ -439,7 +445,7 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 		return nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	netWorkData := make(chan perfEntity.NetWorkingInfo)
+	_outNetWork := make(chan perfEntity.NetWorkingInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
 		return nil, cancelFunc, err
 	}
@@ -450,18 +456,23 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 		return nil, cancelFunc, err
 	}
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		receData, ok := m.Obj.([]interface{})
-		if ok && len(receData) == 2 {
-			sendAndReceiveData, ok := receData[1].([]interface{})
-			if ok {
-				var netData perfEntity.NetWorkingInfo
-				// 有时候是uint8，有时候是uint64。。。恶心
-				netData.RxBytes = uIntToInt64(sendAndReceiveData[0])
-				netData.RxPackets = uIntToInt64(sendAndReceiveData[1])
-				netData.TxBytes = uIntToInt64(sendAndReceiveData[2])
-				netData.TxPackets = uIntToInt64(sendAndReceiveData[3])
-				netData.TimeStamp = time.Now().UnixNano()
-				netWorkData <- netData
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			receData, ok := m.Obj.([]interface{})
+			if ok && len(receData) == 2 {
+				sendAndReceiveData, ok := receData[1].([]interface{})
+				if ok {
+					var netData perfEntity.NetWorkingInfo
+					// 有时候是uint8，有时候是uint64。。。恶心
+					netData.RxBytes = uIntToInt64(sendAndReceiveData[0])
+					netData.RxPackets = uIntToInt64(sendAndReceiveData[1])
+					netData.TxBytes = uIntToInt64(sendAndReceiveData[2])
+					netData.TxPackets = uIntToInt64(sendAndReceiveData[3])
+					netData.TimeStamp = time.Now().UnixNano()
+					_outNetWork <- netData
+				}
 			}
 		}
 	})
@@ -471,14 +482,14 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 		})
 		select {
 		case <-ctx.Done():
-			_, isOpen := <-netWorkData
+			_, isOpen := <-_outNetWork
 			if isOpen {
-				close(netWorkData)
+				close(_outNetWork)
 			}
 		}
 		return
 	}()
-	return netWorkData, cancelFunc, err
+	return _outNetWork, cancelFunc, err
 }
 
 func uIntToInt64(num interface{}) (cnum int64) {
@@ -497,18 +508,19 @@ func uIntToInt64(num interface{}) (cnum int64) {
 	return -1
 }
 
-func (i *instruments) StopNetWorkingServer() {
+func (i *instruments) StopNetWorkingServer() (err error) {
 	var id uint32
-	id, err := i.requestChannel("com.apple.instruments.server.services.networking")
+	id, err = i.requestChannel("com.apple.instruments.server.services.networking")
 	if err != nil {
-		return
+		return err
 	}
 	selector := "stopMonitoring"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return
+		return err
 	}
+	return nil
 }
 
 func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan perfEntity.FPSInfo, chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error) {
@@ -551,24 +563,29 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 	}
 
 	i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		mess := m.Obj
-		var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
-		var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
-		var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			mess := m.Obj
+			var deviceUtilization = mess.(map[string]interface{})["Device Utilization %"]     // Device Utilization
+			var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
+			var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
 
-		var infoGPU perfEntity.GPUInfo
-		infoGPU.DeviceUtilization = uIntToInt64(deviceUtilization)
-		infoGPU.TilerUtilization = uIntToInt64(tilerUtilization)
-		infoGPU.RendererUtilization = uIntToInt64(rendererUtilization)
-		infoGPU.TimeStamp = time.Now().UnixNano()
-		_outGPU <- infoGPU
+			var infoGPU perfEntity.GPUInfo
 
-		var infoFPS perfEntity.FPSInfo
-		var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
-		infoFPS.FPS = int(uIntToInt64(fps))
-		infoFPS.TimeStamp = time.Now().UnixNano()
-		_outFPS <- infoFPS
+			infoGPU.DeviceUtilization = uIntToInt64(deviceUtilization)
+			infoGPU.TilerUtilization = uIntToInt64(tilerUtilization)
+			infoGPU.RendererUtilization = uIntToInt64(rendererUtilization)
+			infoGPU.TimeStamp = time.Now().UnixNano()
+			_outGPU <- infoGPU
 
+			var infoFPS perfEntity.FPSInfo
+			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
+			infoFPS.FPS = int(uIntToInt64(fps))
+			infoFPS.TimeStamp = time.Now().UnixNano()
+			_outFPS <- infoFPS
+		}
 	})
 	go func() {
 		i.registerCallback("_Golang-iDevice_Over", func(_ libimobiledevice.DTXMessageResult) {
@@ -595,18 +612,19 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 	return _outFPS, _outGPU, cancelFunc, err
 }
 
-func (i *instruments) StopOpenglServer() {
+func (i *instruments) StopOpenglServer() (err error) {
 
 	id, err := i.requestChannel("com.apple.instruments.server.services.graphics.opengl")
 	if err != nil {
-		return
+		return err
 	}
 	selector := "stop"
 	args := libimobiledevice.NewAuxBuffer()
 
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
-		return
+		return err
 	}
+	return nil
 }
 
 type Application struct {

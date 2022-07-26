@@ -160,16 +160,16 @@ type Instruments interface {
 
 	StartOpenglServer(ctx context.Context) (chanFPS chan perf.FPSInfo, chanGPU chan perf.GPUInfo, cancel context.CancelFunc, err error)
 
-	StopOpenglServer()
+	StopOpenglServer()  (err error)
 
 	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan perf.CPUInfo, chanMem chan perf.MEMInfo, cancel context.CancelFunc, err error)
 
-	StopSysmontapServer()
+	StopSysmontapServer()  (err error)
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
 
 	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan perf.NetWorkingInfo, cancel context.CancelFunc, err error)
 
-	StopNetWorkingServer()
+	StopNetWorkingServer()  (err error)
 }
 
 type Testmanagerd interface {

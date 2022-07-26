@@ -685,11 +685,8 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 					perfData.NetWorkingInfo = &v
 				}
 			case <-ctx.Done():
-				close(chanFPS)
-				close(chanGPU)
-				close(chanMEM)
-				close(chanCPU)
-				close(chanNetWork)
+				close(result)
+				return
 			}
 			result <- perfData
 		}
@@ -700,8 +697,7 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 func (d *device) StopGetPerfmon(opts ...PerfmonOption) (err error) {
 
 	if d.instruments == nil {
-		_, err := d.instrumentsService()
-		if err != nil {
+		if _, err = d.instrumentsService(); err != nil {
 			return err
 		}
 	}
@@ -716,15 +712,21 @@ func (d *device) StopGetPerfmon(opts ...PerfmonOption) (err error) {
 		}
 	}
 	if perfmonOpts.flagCPU || perfmonOpts.flagMEM {
-		d.instruments.StopSysmontapServer()
+		if err = d.instruments.StopSysmontapServer(); err != nil {
+			return err
+		}
 	}
 	if perfmonOpts.flagGPU || perfmonOpts.flagFPS {
-		d.instruments.StopOpenglServer()
+		if err = d.instruments.StopOpenglServer(); err != nil {
+			return err
+		}
 	}
 	if perfmonOpts.flagNetWork {
-		d.instruments.StopNetWorkingServer()
+		if err = d.instruments.StopNetWorkingServer(); err != nil {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {
