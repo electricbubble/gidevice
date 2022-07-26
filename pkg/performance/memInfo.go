@@ -8,14 +8,14 @@ import (
 
 type MEMInfo struct {
 	// 虚拟内存
-	Anon int64 `json:"anon,omitempty"`
+	Anon       int64 `json:"anon"`
 	// 物理内存
-	PhysMemory int64 `json:"physMemory,omitempty"`
+	PhysMemory int64 `json:"physMemory"`
 	// 总内存
-	Rss int64 `json:"rss,omitempty"`
+	Rss        int64 `json:"rss"`
 	// 虚拟内存
-	Vss       int64 `json:"vss,omitempty"`
-	TimeStamp int64 `json:"timeStamp,omitempty"`
+	Vss        int64 `json:"vss"`
+	TimeStamp  int64 `json:"timeStamp"`
 }
 
 func (memInfo MEMInfo) ToString() string {

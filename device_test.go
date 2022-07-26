@@ -164,43 +164,48 @@ func Test_device_Perf(t *testing.T) {
 	var opts = []PerfmonOption{
 		WithPerfPidOpts("0"),
 		WithPerfCPUOpts(true),
-		WithPerfFPSOpts(true),
-		WithPerfNetWorkOpts(true),
+		WithPerfFPSOpts(false),
+		WithPerfNetWorkOpts(false),
 	}
 
 	outData, cannel, err := dev.GetPerfmon(opts...)
 	if err != nil {
+		fmt.Println(err)
 		os.Exit(0)
 	}
 	var timeLast = time.Now().Unix()
 	for  {
-		data ,ok := <-outData
-		if !ok {
-			fmt.Println("end get perfmon data")
-			return
-		}
-		if !data.IsDataNull() {
-			//fmt.Println(data.ToJson())
-			//fmt.Println(data.ToFormat())
-			fmt.Println(data.ToString())
-		}
-		if time.Now().Unix()-timeLast >6 {
-			if err:=dev.StopGetPerfmon(opts...);err != nil {
-				fmt.Println(err)
-			}
-			cannel()
-		}
-	}
-	for {
 		select {
 		case <-c:
 			err:=dev.StopGetPerfmon(opts...)
 			if err!=nil {
 				fmt.Println(err)
 			}
-			cannel()
+			if cannel!=nil {
+				cannel()
+			}
+		default:
+			data ,ok := <-outData
+			if !ok {
+				fmt.Println("end get perfmon data")
+				return
+			}
+			if !data.IsDataNull() {
+				//fmt.Println(data.ToJson())
+				//fmt.Println(data.ToFormat())
+				fmt.Println(data.ToString())
+			}
+			if time.Now().Unix()-timeLast >6 {
+				if err:=dev.StopGetPerfmon(opts...);err != nil {
+					fmt.Println(err)
+				}
+				if cannel!=nil {
+					cannel()
+				}
+			}
 		}
 	}
+
 }
 
 func Test_device_InstallationProxyBrowse(t *testing.T) {

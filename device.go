@@ -606,6 +606,9 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 			optFunc(perfmonOpts)
 		}
 	}
+	if !perfmonOpts.flagCPU&&!perfmonOpts.flagMEM&&!perfmonOpts.flagFPS&&!perfmonOpts.flagGPU&&!perfmonOpts.flagNetWork {
+		return nil,nil,fmt.Errorf("parameter error,please enter at least one performance parameter")
+	}
 
 	var err error
 

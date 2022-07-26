@@ -7,13 +7,13 @@ import (
 )
 
 type FPSInfo struct {
-	FPS       int   `json:"FPS,omitempty"`
-	TimeStamp int64 `json:"timeStamp,omitempty"`
+	FPS       int   `json:"fps"`
+	TimeStamp int64 `json:"timeStamp"`
 }
 
 func (fpsInfo FPSInfo) ToString() string {
 	var s strings.Builder
-	s.WriteString(fmt.Sprintf("FPS:%d timeStamp:%d\n", fpsInfo.FPS, fpsInfo.TimeStamp))
+	s.WriteString(fmt.Sprintf("fps:%d timeStamp:%d\n", fpsInfo.FPS, fpsInfo.TimeStamp))
 	return s.String()
 }
 

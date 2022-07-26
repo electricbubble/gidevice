@@ -367,6 +367,7 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCP
 
 				var cpuUsage = 0.0
 				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
+				infoCPU.Pid = "invalid PID"
 				if pidMess != nil {
 					processInfo := sysmonPorceAttrs(pidMess)
 					cpuUsage = processInfo["cpuUsage"].(float64)

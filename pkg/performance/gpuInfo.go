@@ -8,12 +8,12 @@ import (
 
 type GPUInfo struct {
 	// 设备利用率
-	DeviceUtilization int64 `json:"deviceUtilization,omitempty"`
+	DeviceUtilization int64 `json:"deviceUtilization"`
 	// 渲染器利用率
-	RendererUtilization int64 `json:"rendererUtilization,omitempty"`
+	RendererUtilization int64 `json:"rendererUtilization"`
 	// 处理顶点的GPU时间占比
-	TilerUtilization int64 `json:"tilerUtilization,omitempty"`
-	TimeStamp        int64 `json:"timeStamp,omitempty"`
+	TilerUtilization int64 `json:"tilerUtilization"`
+	TimeStamp        int64 `json:"timeStamp"`
 }
 
 func (gpuInfo GPUInfo) ToString() string {

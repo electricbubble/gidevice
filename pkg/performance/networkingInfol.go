@@ -7,11 +7,11 @@ import (
 )
 
 type NetWorkingInfo struct {
-	RxBytes   int64 `json:"rxBytes,omitempty"`
-	RxPackets int64 `json:"rxPackets,omitempty"`
-	TxBytes   int64 `json:"txBytes,omitempty"`
-	TxPackets int64 `json:"txPackets,omitempty"`
-	TimeStamp int64 `json:"timeStamp,omitempty"`
+	RxBytes   int64 `json:"rxBytes"`
+	RxPackets int64 `json:"rxPackets"`
+	TxBytes   int64 `json:"txBytes"`
+	TxPackets int64 `json:"txPackets"`
+	TimeStamp int64 `json:"timeStamp"`
 }
 
 func (netWorkInfo NetWorkingInfo) ToString() string {
