@@ -5,16 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path"
-	"strings"
-	"time"
-
 	"github.com/electricbubble/gidevice/pkg/ipa"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
+	"os"
+	"path"
+	"strings"
+	"time"
 )
 
 const LockdownPort = 62078
@@ -589,6 +588,133 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 		return err
 	}
 	return d.crashReportMover.Move(hostDir, opts...)
+}
+
+func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCancel context.CancelFunc, perfErr error) {
+	if d.lockdown == nil {
+		if _, err := d.lockdownService(); err != nil {
+			return nil, nil, err
+		}
+	}
+	if opts==nil {
+		return nil, nil, fmt.Errorf("parameter is empty")
+	}
+	if !opts.openChanCPU&&!opts.openChanMEM&&!opts.openChanGPU&&!opts.openChanFPS&&!opts.openChanNetWork {
+		opts.openChanCPU = true
+		opts.openChanMEM = true
+		opts.openChanGPU = true
+		opts.openChanFPS = true
+		opts.openChanNetWork = true
+	}
+
+	var err error
+
+	var instruments Instruments
+	ctx, cancel := context.WithCancel(context.Background())
+
+	chanCPU := make(chan CPUInfo)
+	chanMEM := make(chan MEMInfo)
+	var cancelSysmontap context.CancelFunc
+
+	if opts.openChanCPU || opts.openChanMEM {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanCPU, chanMEM, cancelSysmontap, err = instruments.StartSysmontapServer(opts.pid, ctx)
+		if err != nil {
+			cancelSysmontap()
+			return nil, cancel, err
+		}
+	}
+
+	chanFPS := make(chan FPSInfo)
+	chanGPU := make(chan GPUInfo)
+	var cancelOpengl context.CancelFunc
+
+	if opts.openChanGPU || opts.openChanFPS {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanFPS, chanGPU, cancelOpengl, err = instruments.StartOpenglServer(ctx)
+		if err != nil {
+			cancelOpengl()
+			return nil, cancel, err
+		}
+	}
+
+	chanNetWork := make(chan NetWorkingInfo)
+	var cancelNetWork context.CancelFunc
+	if opts.openChanNetWork {
+		instruments, err = d.lockdown.InstrumentsService()
+		if err != nil {
+			return nil, cancel, err
+		}
+		chanNetWork, cancelNetWork, err = instruments.StartNetWorkingServer(ctx)
+		if err != nil {
+			cancelNetWork()
+			return nil, cancel, err
+		}
+	}
+	// 弃用之前的PerfMonData ，统一汇总到interface里，由用户自行决定处理数据
+	result := make(chan interface{})
+	go func() {
+		for {
+			select {
+			case v, ok := <-chanCPU:
+				if opts.openChanCPU && ok {
+					result<-v
+				}
+			case v, ok := <-chanMEM:
+				if opts.openChanMEM && ok {
+					result<-v
+				}
+			case v, ok := <-chanFPS:
+				if opts.openChanFPS && ok {
+					result<-v
+				}
+			case v, ok := <-chanGPU:
+				if opts.openChanGPU && ok {
+					result<-v
+				}
+			case v, ok := <-chanNetWork:
+				if opts.openChanNetWork && ok {
+					result<-v
+				}
+			case <-ctx.Done():
+				err:=d.stopPerfmon(opts)
+				if err!=nil {
+					fmt.Println(err)
+				}
+				close(result)
+				return
+			}
+		}
+	}()
+	return result, cancel, err
+}
+
+func (d *device)stopPerfmon(opts *PerfmonOption)(err error)  {
+	if _, err = d.instrumentsService(); err != nil {
+		return err
+	}
+	if opts.openChanCPU || opts.openChanMEM {
+		if err = d.instruments.StopSysmontapServer(); err != nil {
+			return err
+		}
+	}
+	if opts.openChanGPU  || opts.openChanFPS  {
+		if err = d.instruments.StopOpenglServer(); err != nil {
+			return err
+		}
+	}
+	if opts.openChanNetWork  {
+		if err = d.instruments.StopNetWorkingServer(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan string, cancel context.CancelFunc, err error) {

@@ -2,6 +2,7 @@ package libimobiledevice
 
 import (
 	"reflect"
+	"strconv"
 	"time"
 
 	"howett.net/plist"
@@ -202,9 +203,17 @@ func (ka *NSKeyedArchiver) convertValue(v interface{}) interface{} {
 			values := m["NS.objects"].([]interface{})
 
 			for i := 0; i < len(keys); i++ {
-				key := ka.objRefVal[keys[i].(plist.UID)].(string)
+				var keyValue string
+				key := ka.objRefVal[keys[i].(plist.UID)]
+				switch key.(type) {
+				case uint64:
+					keyValue = strconv.Itoa(int(key.(uint64)))
+					break
+				default:
+					keyValue = key.(string)
+				}
 				val := ka.convertValue(ka.objRefVal[values[i].(plist.UID)])
-				ret[key] = val
+				ret[keyValue] = val
 			}
 			return ret
 		case NSMutableArrayClass.Classes[0], NSArrayClass.Classes[0]:
