@@ -8,7 +8,6 @@ import (
 	"github.com/electricbubble/gidevice/pkg/ipa"
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
-	"github.com/electricbubble/gidevice/pkg/performance"
 	uuid "github.com/satori/go.uuid"
 	"howett.net/plist"
 	"os"
@@ -591,23 +590,21 @@ func (d *device) MoveCrashReport(hostDir string, opts ...CrashReportMoverOption)
 	return d.crashReportMover.Move(hostDir, opts...)
 }
 
-func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMonData, outCancel context.CancelFunc, perfErr error) {
+func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCancel context.CancelFunc, perfErr error) {
 	if d.lockdown == nil {
 		if _, err := d.lockdownService(); err != nil {
 			return nil, nil, err
 		}
 	}
-	perfmonOpts := new(perfmonOption)
-	if len(opts) == 0 {
-		perfmonOpts = nil
-		return nil, nil, fmt.Errorf("parameter error,please enter relevant parameters")
-	} else {
-		for _, optFunc := range opts {
-			optFunc(perfmonOpts)
-		}
+	if opts==nil {
+		return nil, nil, fmt.Errorf("parameter is empty")
 	}
-	if !perfmonOpts.flagCPU&&!perfmonOpts.flagMEM&&!perfmonOpts.flagFPS&&!perfmonOpts.flagGPU&&!perfmonOpts.flagNetWork {
-		return nil,nil,fmt.Errorf("parameter error,please enter at least one performance parameter")
+	if !opts.openChanCPU&&!opts.openChanMEM&&!opts.openChanGPU&&!opts.openChanFPS&&!opts.openChanNetWork {
+		opts.openChanCPU = true
+		opts.openChanMEM = true
+		opts.openChanGPU = true
+		opts.openChanFPS = true
+		opts.openChanNetWork = true
 	}
 
 	var err error
@@ -615,27 +612,27 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 	var instruments Instruments
 	ctx, cancel := context.WithCancel(context.Background())
 
-	chanCPU := make(chan perfmorance.CPUInfo)
-	chanMEM := make(chan perfmorance.MEMInfo)
+	chanCPU := make(chan CPUInfo)
+	chanMEM := make(chan MEMInfo)
 	var cancelSysmontap context.CancelFunc
 
-	if perfmonOpts.flagCPU || perfmonOpts.flagMEM {
+	if opts.openChanCPU || opts.openChanMEM {
 		instruments, err = d.lockdown.InstrumentsService()
 		if err != nil {
 			return nil, cancel, err
 		}
-		chanCPU, chanMEM, cancelSysmontap, err = instruments.StartSysmontapServer(perfmonOpts.pid, ctx)
+		chanCPU, chanMEM, cancelSysmontap, err = instruments.StartSysmontapServer(opts.pid, ctx)
 		if err != nil {
 			cancelSysmontap()
 			return nil, cancel, err
 		}
 	}
 
-	chanFPS := make(chan perfmorance.FPSInfo)
-	chanGPU := make(chan perfmorance.GPUInfo)
+	chanFPS := make(chan FPSInfo)
+	chanGPU := make(chan GPUInfo)
 	var cancelOpengl context.CancelFunc
 
-	if perfmonOpts.flagGPU || perfmonOpts.flagFPS {
+	if opts.openChanGPU || opts.openChanFPS {
 		instruments, err = d.lockdown.InstrumentsService()
 		if err != nil {
 			return nil, cancel, err
@@ -647,9 +644,9 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 		}
 	}
 
-	chanNetWork := make(chan perfmorance.NetWorkingInfo)
+	chanNetWork := make(chan NetWorkingInfo)
 	var cancelNetWork context.CancelFunc
-	if perfmonOpts.flagNetWork {
+	if opts.openChanNetWork {
 		instruments, err = d.lockdown.InstrumentsService()
 		if err != nil {
 			return nil, cancel, err
@@ -660,71 +657,59 @@ func (d *device) GetPerfmon(opts ...PerfmonOption) (out chan perfmorance.PerfMon
 			return nil, cancel, err
 		}
 	}
-
-	result := make(chan perfmorance.PerfMonData)
+	// 弃用之前的PerfMonData ，统一汇总到interface里，由用户自行决定处理数据
+	result := make(chan interface{})
 	go func() {
 		for {
-			var perfData perfmorance.PerfMonData
 			select {
 			case v, ok := <-chanCPU:
-				if perfmonOpts.flagCPU && ok {
-					perfData.CPUInfo = &v
+				if opts.openChanCPU && ok {
+					result<-v
 				}
 			case v, ok := <-chanMEM:
-				if perfmonOpts.flagMEM && ok {
-					perfData.MEMInfo = &v
+				if opts.openChanMEM && ok {
+					result<-v
 				}
 			case v, ok := <-chanFPS:
-
-				if perfmonOpts.flagFPS && ok {
-					perfData.FPSInfo = &v
+				if opts.openChanFPS && ok {
+					result<-v
 				}
 			case v, ok := <-chanGPU:
-				if perfmonOpts.flagGPU && ok {
-					perfData.GPUInfo = &v
+				if opts.openChanGPU && ok {
+					result<-v
 				}
 			case v, ok := <-chanNetWork:
-				if perfmonOpts.flagNetWork && ok {
-					perfData.NetWorkingInfo = &v
+				if opts.openChanNetWork && ok {
+					result<-v
 				}
 			case <-ctx.Done():
+				err:=d.stopPerfmon(opts)
+				if err!=nil {
+					fmt.Println(err)
+				}
 				close(result)
 				return
 			}
-			result <- perfData
 		}
 	}()
 	return result, cancel, err
 }
 
-func (d *device) StopGetPerfmon(opts ...PerfmonOption) (err error) {
-
-	if d.instruments == nil {
-		if _, err = d.instrumentsService(); err != nil {
-			return err
-		}
+func (d *device)stopPerfmon(opts *PerfmonOption)(err error)  {
+	if _, err = d.instrumentsService(); err != nil {
+		return err
 	}
-
-	perfmonOpts := new(perfmonOption)
-	if len(opts) == 0 {
-		perfmonOpts = nil
-		return fmt.Errorf("parameter error,please enter relevant parameters")
-	} else {
-		for _, optFunc := range opts {
-			optFunc(perfmonOpts)
-		}
-	}
-	if perfmonOpts.flagCPU || perfmonOpts.flagMEM {
+	if opts.openChanCPU || opts.openChanMEM {
 		if err = d.instruments.StopSysmontapServer(); err != nil {
 			return err
 		}
 	}
-	if perfmonOpts.flagGPU || perfmonOpts.flagFPS {
+	if opts.openChanGPU  || opts.openChanFPS  {
 		if err = d.instruments.StopOpenglServer(); err != nil {
 			return err
 		}
 	}
-	if perfmonOpts.flagNetWork {
+	if opts.openChanNetWork  {
 		if err = d.instruments.StopNetWorkingServer(); err != nil {
 			return err
 		}
