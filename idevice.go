@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	perf "github.com/electricbubble/gidevice/pkg/performance"
 	"log"
 	"time"
 
@@ -79,8 +78,7 @@ type Device interface {
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
-	GetPerfmon(opts ...PerfmonOption) (out chan perf.PerfMonData, outCancel context.CancelFunc, perfErr error)
-	StopGetPerfmon(opts ...PerfmonOption) (err error)
+	GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCancel context.CancelFunc, perfErr error)
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -158,18 +156,18 @@ type Instruments interface {
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 
-	StartOpenglServer(ctx context.Context) (chanFPS chan perf.FPSInfo, chanGPU chan perf.GPUInfo, cancel context.CancelFunc, err error)
+	StartOpenglServer(ctx context.Context) (chanFPS chan FPSInfo, chanGPU chan GPUInfo, cancel context.CancelFunc, err error)
 
-	StopOpenglServer()  (err error)
+	StopOpenglServer() (err error)
 
-	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan perf.CPUInfo, chanMem chan perf.MEMInfo, cancel context.CancelFunc, err error)
+	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan CPUInfo, chanMem chan MEMInfo, cancel context.CancelFunc, err error)
 
-	StopSysmontapServer()  (err error)
+	StopSysmontapServer() (err error)
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
 
-	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan perf.NetWorkingInfo, cancel context.CancelFunc, err error)
+	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan NetWorkingInfo, cancel context.CancelFunc, err error)
 
-	StopNetWorkingServer()  (err error)
+	StopNetWorkingServer() (err error)
 }
 
 type Testmanagerd interface {
@@ -374,63 +372,13 @@ func WithUpdateToken(updateToken string) AppListOption {
 	}
 }
 
-type perfmonOption struct {
-	pid         string
-	flagGPU     bool
-	flagFPS     bool
-	flagCPU     bool
-	flagMEM     bool
-	flagNetWork bool
-}
-
-type PerfmonOption func(option *perfmonOption)
-
-func WithPerfPidOpts(pid string) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.pid == "" {
-			perfmonOpt.pid = pid
-		}
-	}
-}
-
-func WithPerfGPUOpts(flagGPU bool) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.flagGPU == false {
-			perfmonOpt.flagGPU = flagGPU
-		}
-	}
-}
-
-func WithPerfFPSOpts(flagFPS bool) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.flagFPS == false {
-			perfmonOpt.flagFPS = flagFPS
-		}
-	}
-}
-
-func WithPerfCPUOpts(flagCPU bool) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.flagCPU == false {
-			perfmonOpt.flagCPU = flagCPU
-		}
-	}
-}
-
-func WithPerfMEMOpts(flagMEM bool) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.flagCPU == false {
-			perfmonOpt.flagCPU = flagMEM
-		}
-	}
-}
-
-func WithPerfNetWorkOpts(flagNetWork bool) PerfmonOption {
-	return func(perfmonOpt *perfmonOption) {
-		if perfmonOpt.flagNetWork == false {
-			perfmonOpt.flagNetWork = flagNetWork
-		}
-	}
+type PerfmonOption struct {
+	PID             string
+	OpenChanGPU     bool
+	OpenChanFPS     bool
+	OpenChanCPU     bool
+	OpenChanMEM     bool
+	OpenChanNetWork bool
 }
 
 type Process struct {

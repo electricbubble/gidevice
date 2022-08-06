@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	perfEntity "github.com/electricbubble/gidevice/pkg/performance"
 	"time"
 
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
@@ -261,14 +260,14 @@ func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DT
 	i.client.RegisterCallback(obj, cb)
 }
 
-func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context) (chanCPU chan perfEntity.CPUInfo, chanMem chan perfEntity.MEMInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context) (chanCPU chan CPUInfo, chanMem chan MEMInfo, cancel context.CancelFunc, err error) {
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outMEM := make(chan perfEntity.MEMInfo)
-	_outCPU := make(chan perfEntity.CPUInfo)
+	_outMEM := make(chan MEMInfo)
+	_outCPU := make(chan CPUInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.sysmontap"); err != nil {
 		return nil, nil, cancelFunc, err
 	}
@@ -341,11 +340,11 @@ func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context
 	return _outCPU, _outMEM, cancelFunc, err
 }
 
-func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCPU chan perfEntity.CPUInfo, pid string) {
+func chanCPUAndMEMData(mess interface{}, _outMEM chan MEMInfo, _outCPU chan CPUInfo, pid string) {
 	switch mess.(type) {
 	case []interface{}:
-		var infoCPU perfEntity.CPUInfo
-		var infoMEM perfEntity.MEMInfo
+		var infoCPU CPUInfo
+		var infoMEM MEMInfo
 		messArray := mess.([]interface{})
 		if len(messArray) == 2 {
 			var sinfo = messArray[0].(map[string]interface{})
@@ -363,11 +362,9 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCP
 				infoCPU.CPUCount = int(cpuCount.(uint64))
 				infoCPU.SysCpuUsage = cpuTotalLoad.(float64)
 				//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
-				infoCPU.TimeStamp = time.Now().UnixNano()
 
 				var cpuUsage = 0.0
 				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
-				infoCPU.Pid = "invalid PID"
 				if pidMess != nil {
 					processInfo := sysmonPorceAttrs(pidMess)
 					cpuUsage = processInfo["cpuUsage"].(float64)
@@ -375,16 +372,27 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan perfEntity.MEMInfo, _outCP
 					infoCPU.Pid = pid
 					infoCPU.AttrCtxSwitch = uIntToInt64(processInfo["ctxSwitch"])
 					infoCPU.AttrIntWakeups = uIntToInt64(processInfo["intWakeups"])
-					_outCPU <- infoCPU
 
 					infoMEM.Vss = uIntToInt64(processInfo["memVirtualSize"])
 					infoMEM.Rss = uIntToInt64(processInfo["memResidentSize"])
 					infoMEM.Anon = uIntToInt64(processInfo["memAnon"])
 					infoMEM.PhysMemory = uIntToInt64(processInfo["physFootprint"])
-					infoMEM.TimeStamp = time.Now().UnixNano()
-					_outMEM <- infoMEM
 
+				} else {
+					infoCPU.Mess = "invalid PID"
+					infoMEM.Mess = "invalid PID"
+
+					infoMEM.Vss = -1
+					infoMEM.Rss = -1
+					infoMEM.Anon = -1
+					infoMEM.PhysMemory = -1
 				}
+
+				infoMEM.TimeStamp = time.Now().UnixNano()
+				infoCPU.TimeStamp = time.Now().UnixNano()
+
+				_outMEM <- infoMEM
+				_outCPU <- infoCPU
 			}
 		}
 	}
@@ -420,7 +428,7 @@ func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
 	// 匿名内存
 	outCpuInfo["memAnon"] = cpuMessArray[6]
 
-	outCpuInfo["pid"] = cpuMessArray[7]
+	outCpuInfo["PID"] = cpuMessArray[7]
 	return
 }
 
@@ -431,7 +439,6 @@ func (i *instruments) StopSysmontapServer() (err error) {
 	}
 	selector := "stop"
 	args := libimobiledevice.NewAuxBuffer()
-
 	if _, err = i.client.Invoke(selector, args, id, true); err != nil {
 		return err
 	}
@@ -440,13 +447,13 @@ func (i *instruments) StopSysmontapServer() (err error) {
 
 // todo 获取单进程流量情况，看情况做不做
 // 目前只获取到系统全局的流量情况，单进程需要用到set，go没有，并且实际用python测试单进程的流量情况不准
-func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetWorking chan perfEntity.NetWorkingInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetWorking chan NetWorkingInfo, cancel context.CancelFunc, err error) {
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outNetWork := make(chan perfEntity.NetWorkingInfo)
+	_outNetWork := make(chan NetWorkingInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
 		return nil, cancelFunc, err
 	}
@@ -465,7 +472,7 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 			if ok && len(receData) == 2 {
 				sendAndReceiveData, ok := receData[1].([]interface{})
 				if ok {
-					var netData perfEntity.NetWorkingInfo
+					var netData NetWorkingInfo
 					// 有时候是uint8，有时候是uint64。。。恶心
 					netData.RxBytes = uIntToInt64(sendAndReceiveData[0])
 					netData.RxPackets = uIntToInt64(sendAndReceiveData[1])
@@ -524,14 +531,14 @@ func (i *instruments) StopNetWorkingServer() (err error) {
 	return nil
 }
 
-func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan perfEntity.FPSInfo, chanGPU chan perfEntity.GPUInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan FPSInfo, chanGPU chan GPUInfo, cancel context.CancelFunc, err error) {
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outFPS := make(chan perfEntity.FPSInfo)
-	_outGPU := make(chan perfEntity.GPUInfo)
+	_outFPS := make(chan FPSInfo)
+	_outGPU := make(chan GPUInfo)
 	if id, err = i.requestChannel("com.apple.instruments.server.services.graphics.opengl"); err != nil {
 		return nil, nil, cancelFunc, err
 	}
@@ -573,7 +580,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 			var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
 			var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
 
-			var infoGPU perfEntity.GPUInfo
+			var infoGPU GPUInfo
 
 			infoGPU.DeviceUtilization = uIntToInt64(deviceUtilization)
 			infoGPU.TilerUtilization = uIntToInt64(tilerUtilization)
@@ -581,7 +588,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 			infoGPU.TimeStamp = time.Now().UnixNano()
 			_outGPU <- infoGPU
 
-			var infoFPS perfEntity.FPSInfo
+			var infoFPS FPSInfo
 			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
 			infoFPS.FPS = int(uIntToInt64(fps))
 			infoFPS.TimeStamp = time.Now().UnixNano()
@@ -652,4 +659,45 @@ type DeviceInfo struct {
 	ProductType       string `json:"_productType"`
 	ProductVersion    string `json:"_productVersion"`
 	XRDeviceClassName string `json:"_xrdeviceClassName"`
+}
+
+type CPUInfo struct {
+	Pid            string  `json:"PID"`                      // 线程
+	CPUCount       int     `json:"cpuCount"`                 // CPU总数
+	TimeStamp      int64   `json:"timeStamp"`                // 时间戳
+	CPUUsage       float64 `json:"cpuUsage,omitempty"`       // 单个进程的CPU使用率
+	SysCpuUsage    float64 `json:"sysCpuUsage,omitempty"`    // 系统总体CPU占用
+	AttrCtxSwitch  int64   `json:"attrCtxSwitch,omitempty"`  // 上下文切换数
+	AttrIntWakeups int64   `json:"attrIntWakeups,omitempty"` // 唤醒数
+	Mess           string  `json:"mess,omitempty"`           // 提示信息，当PID没输入或者信息错误时提示
+}
+
+type FPSInfo struct {
+	FPS       int   `json:"fps"`
+	TimeStamp int64 `json:"timeStamp"`
+}
+
+type GPUInfo struct {
+	TilerUtilization    int64  `json:"tilerUtilization"` // 处理顶点的GPU时间占比
+	TimeStamp           int64  `json:"timeStamp"`
+	Mess                string `json:"mess,omitempty"`      // 提示信息，当PID没输入时提示
+	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
+	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
+}
+
+type MEMInfo struct {
+	Anon       int64  `json:"anon"`           // 虚拟内存
+	PhysMemory int64  `json:"physMemory"`     // 物理内存
+	Rss        int64  `json:"rss"`            // 总内存
+	Vss        int64  `json:"vss"`            // 虚拟内存
+	TimeStamp  int64  `json:"timeStamp"`      //
+	Mess       string `json:"mess,omitempty"` // 提示信息，当PID没输入或者信息错误时提示
+}
+
+type NetWorkingInfo struct {
+	RxBytes   int64 `json:"rxBytes"`
+	RxPackets int64 `json:"rxPackets"`
+	TxBytes   int64 `json:"txBytes"`
+	TxPackets int64 `json:"txPackets"`
+	TimeStamp int64 `json:"timeStamp"`
 }

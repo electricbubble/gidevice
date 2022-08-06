@@ -1,6 +1,7 @@
 package giDevice
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -156,19 +157,22 @@ func Test_device_Shutdown(t *testing.T) {
 
 func Test_device_Perf(t *testing.T) {
 	//setupDevice(t)
+	//SetDebug(true,true)
 	setupLockdownSrv(t)
 
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt, os.Kill)
 
-	var opts = []PerfmonOption{
-		WithPerfPidOpts("0"),
-		WithPerfCPUOpts(true),
-		WithPerfFPSOpts(false),
-		WithPerfNetWorkOpts(false),
+	var opts = &PerfmonOption{
+		//PID: "0",
+		//OpenChanNetWork: true,
+		//OpenChanFPS: true,
+		OpenChanMEM: true,
+		//OpenChanCPU: true,
+		//OpenChanGPU: true,
 	}
 
-	outData, cannel, err := dev.GetPerfmon(opts...)
+	outData, cannel, err := dev.GetPerfmon(opts)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(0)
@@ -177,10 +181,6 @@ func Test_device_Perf(t *testing.T) {
 	for  {
 		select {
 		case <-c:
-			err:=dev.StopGetPerfmon(opts...)
-			if err!=nil {
-				fmt.Println(err)
-			}
 			if cannel!=nil {
 				cannel()
 			}
@@ -190,18 +190,10 @@ func Test_device_Perf(t *testing.T) {
 				fmt.Println("end get perfmon data")
 				return
 			}
-			if !data.IsDataNull() {
-				//fmt.Println(data.ToJson())
-				//fmt.Println(data.ToFormat())
-				fmt.Println(data.ToString())
-			}
-			if time.Now().Unix()-timeLast >6 {
-				if err:=dev.StopGetPerfmon(opts...);err != nil {
-					fmt.Println(err)
-				}
-				if cannel!=nil {
-					cannel()
-				}
+			result, _ := json.MarshalIndent(data, "", "\t")
+			fmt.Println(string(result))
+			if time.Now().Unix()-timeLast >60 {
+				cannel()
 			}
 		}
 	}
