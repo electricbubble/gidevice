@@ -11,7 +11,7 @@ func TestPerf(t *testing.T) {
 	data, err := dev.PerfStart(
 		WithPerfCPU(true),
 		WithPerfMem(true),
-		WithPerfBundleID("com.apple.mobilesafari"),
+		WithPerfBundleID("com.apple.Spotlight"),
 	)
 	if err != nil {
 		t.Fatal(err)

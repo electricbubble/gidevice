@@ -14,12 +14,15 @@ const (
 	instrumentsServiceDeviceInfo              = "com.apple.instruments.server.services.deviceinfo"
 	instrumentsServiceProcessControl          = "com.apple.instruments.server.services.processcontrol"
 	instrumentsServiceDeviceApplictionListing = "com.apple.instruments.server.services.device.applictionListing"
-	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"        // 获取FPS
-	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"              // 获取 CPU/Mem 性能数据
-	instrumentsServiceXcodeNetworkStatistics  = "com.apple.xcode.debug-gauge-data-providers.NetworkStatistics" // 获取单进程网络数据
-	instrumentsServiceXcodeEnergyStatistics   = "com.apple.xcode.debug-gauge-data-providers.Energy"            // 获取功耗数据
-	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"             // 获取全局网络数据
-	instrumentsServiceMobileNotifications     = "com.apple.instruments.server.services.mobilenotifications"    // 监控应用状态
+	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"     // 获取FPS
+	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"           // 获取 CPU/Mem 性能数据
+	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"          // 获取全局网络数据
+	instrumentsServiceMobileNotifications     = "com.apple.instruments.server.services.mobilenotifications" // 监控应用状态
+)
+
+const (
+	instrumentsServiceXcodeNetworkStatistics = "com.apple.xcode.debug-gauge-data-providers.NetworkStatistics" // 获取单进程网络数据
+	instrumentsServiceXcodeEnergyStatistics  = "com.apple.xcode.debug-gauge-data-providers.Energy"            // 获取功耗数据
 )
 
 var _ Instruments = (*instruments)(nil)

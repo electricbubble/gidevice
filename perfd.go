@@ -108,7 +108,7 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
 	if c.option.cpu || c.option.mem {
-		cancel, err := c.iterCPUMem(c.option.pid, context.Background())
+		cancel, err := c.registerCPUMem(c.option.pid, context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func (c *perfdClient) Stop() {
 	}
 }
 
-func (c *perfdClient) iterCPUMem(pid string, ctx context.Context) (
+func (c *perfdClient) registerCPUMem(pid string, ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
 	chanID, err := c.i.requestChannel(instrumentsServiceSysmontap)
@@ -195,14 +195,14 @@ func (c *perfdClient) iterCPUMem(pid string, ctx context.Context) (
 		case <-ctx.Done():
 			return
 		default:
-			c.convertCPUMem(m.Obj, pid)
+			c.parseCPUMem(m.Obj, pid)
 		}
 	})
 
 	return cancel, err
 }
 
-func (c *perfdClient) convertCPUMem(data interface{}, pid string) {
+func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 	messArray, ok := data.([]interface{})
 	if !ok || len(messArray) != 2 {
 		return
@@ -266,6 +266,7 @@ func (c *perfdClient) convertCPUMem(data interface{}, pid string) {
 	memInfo := MemData{
 		Type:      "mem",
 		TimeStamp: time.Now().Unix(),
+		ProcPID:   pid,
 	}
 
 	procData, ok := processes[pid]
@@ -318,6 +319,7 @@ type MemData struct {
 	PhysMemory int64  `json:"physMemory"`    // 物理内存
 	Rss        int64  `json:"rss"`           // 总内存
 	Vss        int64  `json:"vss"`           // 虚拟内存
+	ProcPID    string `json:"procPID"`       // 进程 PID
 	Msg        string `json:"msg,omitempty"` // 提示信息
 }
 
