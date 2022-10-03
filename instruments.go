@@ -9,6 +9,19 @@ import (
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
+// instruments services
+const (
+	instrumentsServiceDeviceInfo              = "com.apple.instruments.server.services.deviceinfo"
+	instrumentsServiceProcessControl          = "com.apple.instruments.server.services.processcontrol"
+	instrumentsServiceDeviceApplictionListing = "com.apple.instruments.server.services.device.applictionListing"
+	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"        // 获取FPS
+	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"              // 获取 CPU/Mem 性能数据
+	instrumentsServiceXcodeNetworkStatistics  = "com.apple.xcode.debug-gauge-data-providers.NetworkStatistics" // 获取单进程网络数据
+	instrumentsServiceXcodeEnergyStatistics   = "com.apple.xcode.debug-gauge-data-providers.Energy"            // 获取功耗数据
+	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"             // 获取全局网络数据
+	instrumentsServiceMobileNotifications     = "com.apple.instruments.server.services.mobilenotifications"    // 监控应用状态
+)
+
 var _ Instruments = (*instruments)(nil)
 
 func newInstruments(client *libimobiledevice.InstrumentsClient) *instruments {
@@ -44,7 +57,7 @@ func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid i
 	}
 
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return 0, err
 	}
 
@@ -80,7 +93,7 @@ func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid i
 
 func (i *instruments) appProcess(bundleID string) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -99,7 +112,7 @@ func (i *instruments) appProcess(bundleID string) (err error) {
 
 func (i *instruments) startObserving(pid int) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -122,7 +135,7 @@ func (i *instruments) startObserving(pid int) (err error) {
 
 func (i *instruments) AppKill(pid int) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -141,7 +154,7 @@ func (i *instruments) AppKill(pid int) (err error) {
 
 func (i *instruments) AppRunningProcesses() (processes []Process, err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.deviceinfo"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceInfo); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +203,7 @@ func (i *instruments) AppList(opts ...AppListOption) (apps []Application, err er
 	}
 
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.device.applictionListing"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceApplictionListing); err != nil {
 		return nil, err
 	}
 
@@ -235,7 +248,7 @@ func (i *instruments) AppList(opts ...AppListOption) (apps []Application, err er
 
 func (i *instruments) DeviceInfo() (devInfo *DeviceInfo, err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.deviceinfo"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceInfo); err != nil {
 		return nil, err
 	}
 
@@ -260,15 +273,17 @@ func (i *instruments) registerCallback(obj string, cb func(m libimobiledevice.DT
 	i.client.RegisterCallback(obj, cb)
 }
 
-func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context) (chanCPU chan CPUInfo, chanMem chan MEMInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context) (
+	chanCPU chan CPUData, chanMem chan MemData, cancel context.CancelFunc, err error) {
+
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outMEM := make(chan MEMInfo)
-	_outCPU := make(chan CPUInfo)
-	if id, err = i.requestChannel("com.apple.instruments.server.services.sysmontap"); err != nil {
+	_outMEM := make(chan MemData)
+	_outCPU := make(chan CPUData)
+	if id, err = i.requestChannel(instrumentsServiceSysmontap); err != nil {
 		return nil, nil, cancelFunc, err
 	}
 
@@ -340,11 +355,11 @@ func (i *instruments) StartSysmontapServer(pid string, ctxParent context.Context
 	return _outCPU, _outMEM, cancelFunc, err
 }
 
-func chanCPUAndMEMData(mess interface{}, _outMEM chan MEMInfo, _outCPU chan CPUInfo, pid string) {
+func chanCPUAndMEMData(mess interface{}, _outMEM chan MemData, _outCPU chan CPUData, pid string) {
 	switch mess.(type) {
 	case []interface{}:
-		var infoCPU CPUInfo
-		var infoMEM MEMInfo
+		var infoCPU CPUData
+		var infoMEM MemData
 		messArray := mess.([]interface{})
 		if len(messArray) == 2 {
 			var sinfo = messArray[0].(map[string]interface{})
@@ -360,27 +375,27 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan MEMInfo, _outCPU chan CPUI
 				var cpuTotalLoad = sysCpuUsage["CPU_TotalLoad"]
 				// 构建返回信息
 				infoCPU.CPUCount = int(cpuCount.(uint64))
-				infoCPU.SysCpuUsage = cpuTotalLoad.(float64)
+				infoCPU.SysCPUUsageTotalLoad = cpuTotalLoad.(float64)
 				//finalCpuInfo["attrCpuTotal"] = cpuTotalLoad
 
 				var cpuUsage = 0.0
 				pidMess := pinfolist["Processes"].(map[string]interface{})[pid]
 				if pidMess != nil {
-					processInfo := sysmonPorceAttrs(pidMess)
+					processInfo := convertProcessData(pidMess)
 					cpuUsage = processInfo["cpuUsage"].(float64)
-					infoCPU.CPUUsage = cpuUsage
-					infoCPU.Pid = pid
-					infoCPU.AttrCtxSwitch = uIntToInt64(processInfo["ctxSwitch"])
-					infoCPU.AttrIntWakeups = uIntToInt64(processInfo["intWakeups"])
+					infoCPU.ProcCPUUsage = cpuUsage
+					infoCPU.ProcPID = pid
+					infoCPU.ProcAttrCtxSwitch = convert2Int64(processInfo["ctxSwitch"])
+					infoCPU.ProcAttrIntWakeups = convert2Int64(processInfo["intWakeups"])
 
-					infoMEM.Vss = uIntToInt64(processInfo["memVirtualSize"])
-					infoMEM.Rss = uIntToInt64(processInfo["memResidentSize"])
-					infoMEM.Anon = uIntToInt64(processInfo["memAnon"])
-					infoMEM.PhysMemory = uIntToInt64(processInfo["physFootprint"])
+					infoMEM.Vss = convert2Int64(processInfo["memVirtualSize"])
+					infoMEM.Rss = convert2Int64(processInfo["memResidentSize"])
+					infoMEM.Anon = convert2Int64(processInfo["memAnon"])
+					infoMEM.PhysMemory = convert2Int64(processInfo["physFootprint"])
 
 				} else {
-					infoCPU.Mess = "invalid PID"
-					infoMEM.Mess = "invalid PID"
+					infoCPU.Msg = "invalid PID"
+					infoMEM.Msg = "invalid PID"
 
 					infoMEM.Vss = -1
 					infoMEM.Rss = -1
@@ -398,42 +413,8 @@ func chanCPUAndMEMData(mess interface{}, _outMEM chan MEMInfo, _outCPU chan CPUI
 	}
 }
 
-// 获取进程相关信息
-func sysmonPorceAttrs(cpuMess interface{}) (outCpuInfo map[string]interface{}) {
-	if cpuMess == nil {
-		return nil
-	}
-	cpuMessArray, ok := cpuMess.([]interface{})
-	if !ok {
-		return nil
-	}
-	if len(cpuMessArray) != 8 {
-		return nil
-	}
-	if outCpuInfo == nil {
-		outCpuInfo = map[string]interface{}{}
-	}
-	// 虚拟内存
-	outCpuInfo["memVirtualSize"] = cpuMessArray[0]
-	// CPU
-	outCpuInfo["cpuUsage"] = cpuMessArray[1]
-	// 每秒进程的上下文切换次数
-	outCpuInfo["ctxSwitch"] = cpuMessArray[2]
-	// 每秒进程唤醒的线程数
-	outCpuInfo["intWakeups"] = cpuMessArray[3]
-	// 物理内存
-	outCpuInfo["physFootprint"] = cpuMessArray[4]
-
-	outCpuInfo["memResidentSize"] = cpuMessArray[5]
-	// 匿名内存
-	outCpuInfo["memAnon"] = cpuMessArray[6]
-
-	outCpuInfo["PID"] = cpuMessArray[7]
-	return
-}
-
 func (i *instruments) StopSysmontapServer() (err error) {
-	id, err := i.requestChannel("com.apple.instruments.server.services.sysmontap")
+	id, err := i.requestChannel(instrumentsServiceSysmontap)
 	if err != nil {
 		return err
 	}
@@ -454,7 +435,7 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
 	_outNetWork := make(chan NetWorkingInfo)
-	if id, err = i.requestChannel("com.apple.instruments.server.services.networking"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceNetworking); err != nil {
 		return nil, cancelFunc, err
 	}
 	selector := "startMonitoring"
@@ -474,10 +455,10 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 				if ok {
 					var netData NetWorkingInfo
 					// 有时候是uint8，有时候是uint64。。。恶心
-					netData.RxBytes = uIntToInt64(sendAndReceiveData[0])
-					netData.RxPackets = uIntToInt64(sendAndReceiveData[1])
-					netData.TxBytes = uIntToInt64(sendAndReceiveData[2])
-					netData.TxPackets = uIntToInt64(sendAndReceiveData[3])
+					netData.RxBytes = convert2Int64(sendAndReceiveData[0])
+					netData.RxPackets = convert2Int64(sendAndReceiveData[1])
+					netData.TxBytes = convert2Int64(sendAndReceiveData[2])
+					netData.TxPackets = convert2Int64(sendAndReceiveData[3])
 					netData.TimeStamp = time.Now().UnixNano()
 					_outNetWork <- netData
 				}
@@ -500,25 +481,9 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 	return _outNetWork, cancelFunc, err
 }
 
-func uIntToInt64(num interface{}) (cnum int64) {
-	switch num.(type) {
-	case uint64:
-		return int64(num.(uint64))
-	case uint32:
-		return int64(num.(uint32))
-	case uint16:
-		return int64(num.(uint16))
-	case uint8:
-		return int64(num.(uint8))
-	case uint:
-		return int64(num.(uint))
-	}
-	return -1
-}
-
 func (i *instruments) StopNetWorkingServer() (err error) {
 	var id uint32
-	id, err = i.requestChannel("com.apple.instruments.server.services.networking")
+	id, err = i.requestChannel(instrumentsServiceNetworking)
 	if err != nil {
 		return err
 	}
@@ -539,7 +504,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 	ctx, cancelFunc := context.WithCancel(ctxParent)
 	_outFPS := make(chan FPSInfo)
 	_outGPU := make(chan GPUInfo)
-	if id, err = i.requestChannel("com.apple.instruments.server.services.graphics.opengl"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceGraphicsOpengl); err != nil {
 		return nil, nil, cancelFunc, err
 	}
 
@@ -582,15 +547,15 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 
 			var infoGPU GPUInfo
 
-			infoGPU.DeviceUtilization = uIntToInt64(deviceUtilization)
-			infoGPU.TilerUtilization = uIntToInt64(tilerUtilization)
-			infoGPU.RendererUtilization = uIntToInt64(rendererUtilization)
+			infoGPU.DeviceUtilization = convert2Int64(deviceUtilization)
+			infoGPU.TilerUtilization = convert2Int64(tilerUtilization)
+			infoGPU.RendererUtilization = convert2Int64(rendererUtilization)
 			infoGPU.TimeStamp = time.Now().UnixNano()
 			_outGPU <- infoGPU
 
 			var infoFPS FPSInfo
 			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
-			infoFPS.FPS = int(uIntToInt64(fps))
+			infoFPS.FPS = int(convert2Int64(fps))
 			infoFPS.TimeStamp = time.Now().UnixNano()
 			_outFPS <- infoFPS
 		}
@@ -622,7 +587,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 
 func (i *instruments) StopOpenglServer() (err error) {
 
-	id, err := i.requestChannel("com.apple.instruments.server.services.graphics.opengl")
+	id, err := i.requestChannel(instrumentsServiceGraphicsOpengl)
 	if err != nil {
 		return err
 	}
@@ -661,17 +626,6 @@ type DeviceInfo struct {
 	XRDeviceClassName string `json:"_xrdeviceClassName"`
 }
 
-type CPUInfo struct {
-	Pid            string  `json:"PID"`                      // 线程
-	CPUCount       int     `json:"cpuCount"`                 // CPU总数
-	TimeStamp      int64   `json:"timeStamp"`                // 时间戳
-	CPUUsage       float64 `json:"cpuUsage,omitempty"`       // 单个进程的CPU使用率
-	SysCpuUsage    float64 `json:"sysCpuUsage,omitempty"`    // 系统总体CPU占用
-	AttrCtxSwitch  int64   `json:"attrCtxSwitch,omitempty"`  // 上下文切换数
-	AttrIntWakeups int64   `json:"attrIntWakeups,omitempty"` // 唤醒数
-	Mess           string  `json:"mess,omitempty"`           // 提示信息，当PID没输入或者信息错误时提示
-}
-
 type FPSInfo struct {
 	FPS       int   `json:"fps"`
 	TimeStamp int64 `json:"timeStamp"`
@@ -683,15 +637,6 @@ type GPUInfo struct {
 	Mess                string `json:"mess,omitempty"`      // 提示信息，当PID没输入时提示
 	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
 	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
-}
-
-type MEMInfo struct {
-	Anon       int64  `json:"anon"`           // 虚拟内存
-	PhysMemory int64  `json:"physMemory"`     // 物理内存
-	Rss        int64  `json:"rss"`            // 总内存
-	Vss        int64  `json:"vss"`            // 虚拟内存
-	TimeStamp  int64  `json:"timeStamp"`      //
-	Mess       string `json:"mess,omitempty"` // 提示信息，当PID没输入或者信息错误时提示
 }
 
 type NetWorkingInfo struct {

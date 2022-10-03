@@ -5,15 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/ipa"
-	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
-	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
-	uuid "github.com/satori/go.uuid"
-	"howett.net/plist"
 	"os"
 	"path"
 	"strings"
 	"time"
+
+	uuid "github.com/satori/go.uuid"
+	"howett.net/plist"
+
+	"github.com/electricbubble/gidevice/pkg/ipa"
+	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
+	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 )
 
 const LockdownPort = 62078
@@ -46,6 +48,7 @@ type device struct {
 	springBoard       SpringBoard
 	crashReportMover  CrashReportMover
 	pcapd             Pcapd
+	perfd             Perfd
 }
 
 func (d *device) Properties() DeviceProperties {
@@ -569,6 +572,50 @@ func (d *device) PcapStop() {
 	d.pcapd.Stop()
 }
 
+func (d *device) getPidByBundleID(bundleID string) (pid int, err error) {
+	mapper := make(map[string]interface{})
+	apps, err := d.AppList()
+	if err != nil {
+		fmt.Printf("get app list error: %v\n", err)
+		return -1, err
+	}
+	for _, app := range apps {
+		mapper[app.ExecutableName] = app.CFBundleIdentifier
+	}
+
+	processes, err := d.AppRunningProcesses()
+	if err != nil {
+		fmt.Printf("get running app processes error: %v\n", err)
+		return -1, err
+	}
+	for _, proc := range processes {
+		b, ok := mapper[proc.Name]
+		if ok && bundleID == b {
+			fmt.Printf("get pid %d by bundleId %s\n", proc.Pid, bundleID)
+			return proc.Pid, nil
+		}
+	}
+
+	fmt.Printf("can't find pid by bundleID: %s\n", bundleID)
+	return -1, fmt.Errorf("can't find pid by bundleID: %s", bundleID)
+}
+
+func (d *device) PerfStart(opts ...PerfOption) (data <-chan []byte, err error) {
+	if _, err = d.instrumentsService(); err != nil {
+		return nil, err
+	}
+
+	d.perfd = d.newPerfdClient(d.instruments, opts...)
+	return d.perfd.Start()
+}
+
+func (d *device) PerfStop() {
+	if d.perfd == nil {
+		return
+	}
+	d.perfd.Stop()
+}
+
 func (d *device) crashReportMoverService() (crashReportMover CrashReportMover, err error) {
 	if d.crashReportMover != nil {
 		return d.crashReportMover, nil
@@ -596,10 +643,10 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 			return nil, nil, err
 		}
 	}
-	if opts==nil {
+	if opts == nil {
 		return nil, nil, fmt.Errorf("parameter is empty")
 	}
-	if !opts.OpenChanCPU &&!opts.OpenChanMEM &&!opts.OpenChanGPU &&!opts.OpenChanFPS &&!opts.OpenChanNetWork {
+	if !opts.OpenChanCPU && !opts.OpenChanMEM && !opts.OpenChanGPU && !opts.OpenChanFPS && !opts.OpenChanNetWork {
 		opts.OpenChanCPU = true
 		opts.OpenChanMEM = true
 		opts.OpenChanGPU = true
@@ -612,8 +659,8 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 	var instruments Instruments
 	ctx, cancel := context.WithCancel(context.Background())
 
-	chanCPU := make(chan CPUInfo)
-	chanMEM := make(chan MEMInfo)
+	chanCPU := make(chan CPUData)
+	chanMEM := make(chan MemData)
 	var cancelSysmontap context.CancelFunc
 
 	if opts.OpenChanCPU || opts.OpenChanMEM {
@@ -664,27 +711,27 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 			select {
 			case v, ok := <-chanCPU:
 				if opts.OpenChanCPU && ok {
-					result<-v
+					result <- v
 				}
 			case v, ok := <-chanMEM:
 				if opts.OpenChanMEM && ok {
-					result<-v
+					result <- v
 				}
 			case v, ok := <-chanFPS:
 				if opts.OpenChanFPS && ok {
-					result<-v
+					result <- v
 				}
 			case v, ok := <-chanGPU:
 				if opts.OpenChanGPU && ok {
-					result<-v
+					result <- v
 				}
 			case v, ok := <-chanNetWork:
 				if opts.OpenChanNetWork && ok {
-					result<-v
+					result <- v
 				}
 			case <-ctx.Done():
-				err:=d.stopPerfmon(opts)
-				if err!=nil {
+				err := d.stopPerfmon(opts)
+				if err != nil {
 					fmt.Println(err)
 				}
 				close(result)
@@ -695,7 +742,7 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 	return result, cancel, err
 }
 
-func (d *device)stopPerfmon(opts *PerfmonOption)(err error)  {
+func (d *device) stopPerfmon(opts *PerfmonOption) (err error) {
 	if _, err = d.instrumentsService(); err != nil {
 		return err
 	}

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
@@ -79,6 +78,9 @@ type Device interface {
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
 	GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCancel context.CancelFunc, perfErr error)
+
+	PerfStart(opts ...PerfOption) (data <-chan []byte, err error)
+	PerfStop()
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -160,7 +162,7 @@ type Instruments interface {
 
 	StopOpenglServer() (err error)
 
-	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan CPUInfo, chanMem chan MEMInfo, cancel context.CancelFunc, err error)
+	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan CPUData, chanMem chan MemData, cancel context.CancelFunc, err error)
 
 	StopSysmontapServer() (err error)
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
@@ -229,6 +231,11 @@ type SyslogRelay interface {
 
 type Pcapd interface {
 	Packet() <-chan []byte
+	Stop()
+}
+
+type Perfd interface {
+	Start() (data <-chan []byte, err error)
 	Stop()
 }
 
@@ -493,5 +500,5 @@ func debugLog(msg string) {
 	if !debugFlag {
 		return
 	}
-	log.Println(fmt.Sprintf("[go-iDevice-debug] %s", msg))
+	fmt.Printf("[go-iDevice-debug] %s\n", msg)
 }
