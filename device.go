@@ -691,7 +691,7 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 		}
 	}
 
-	chanNetWork := make(chan NetWorkingInfo)
+	chanNetWork := make(chan NetworkData)
 	var cancelNetWork context.CancelFunc
 	if opts.OpenChanNetWork {
 		instruments, err = d.lockdown.InstrumentsService()

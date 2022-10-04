@@ -431,13 +431,13 @@ func (i *instruments) StopSysmontapServer() (err error) {
 
 // todo 获取单进程流量情况，看情况做不做
 // 目前只获取到系统全局的流量情况，单进程需要用到set，go没有，并且实际用python测试单进程的流量情况不准
-func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetWorking chan NetWorkingInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetWorking chan NetworkData, cancel context.CancelFunc, err error) {
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outNetWork := make(chan NetWorkingInfo)
+	_outNetWork := make(chan NetworkData)
 	if id, err = i.requestChannel(instrumentsServiceNetworking); err != nil {
 		return nil, cancelFunc, err
 	}
@@ -456,7 +456,7 @@ func (i *instruments) StartNetWorkingServer(ctxParent context.Context) (chanNetW
 			if ok && len(receData) == 2 {
 				sendAndReceiveData, ok := receData[1].([]interface{})
 				if ok {
-					var netData NetWorkingInfo
+					var netData NetworkData
 					// 有时候是uint8，有时候是uint64。。。恶心
 					netData.RxBytes = convert2Int64(sendAndReceiveData[0])
 					netData.RxPackets = convert2Int64(sendAndReceiveData[1])
@@ -627,12 +627,4 @@ type DeviceInfo struct {
 	ProductType       string `json:"_productType"`
 	ProductVersion    string `json:"_productVersion"`
 	XRDeviceClassName string `json:"_xrdeviceClassName"`
-}
-
-type NetWorkingInfo struct {
-	RxBytes   int64 `json:"rxBytes"`
-	RxPackets int64 `json:"rxPackets"`
-	TxBytes   int64 `json:"txBytes"`
-	TxPackets int64 `json:"txPackets"`
-	TimeStamp int64 `json:"timeStamp"`
 }

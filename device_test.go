@@ -165,9 +165,9 @@ func Test_device_Perf(t *testing.T) {
 
 	var opts = &PerfmonOption{
 		//PID: "0",
-		//OpenChanNetWork: true,
-		//OpenChanFPS: true,
-		OpenChanMEM: true,
+		OpenChanNetWork: true,
+		// OpenChanFPS: true,
+		// OpenChanMEM: true,
 		//OpenChanCPU: true,
 		//OpenChanGPU: true,
 	}
@@ -178,21 +178,21 @@ func Test_device_Perf(t *testing.T) {
 		os.Exit(0)
 	}
 	var timeLast = time.Now().Unix()
-	for  {
+	for {
 		select {
 		case <-c:
-			if cannel!=nil {
+			if cannel != nil {
 				cannel()
 			}
 		default:
-			data ,ok := <-outData
+			data, ok := <-outData
 			if !ok {
 				fmt.Println("end get perfmon data")
 				return
 			}
 			result, _ := json.MarshalIndent(data, "", "\t")
 			fmt.Println(string(result))
-			if time.Now().Unix()-timeLast >60 {
+			if time.Now().Unix()-timeLast > 60 {
 				cannel()
 			}
 		}

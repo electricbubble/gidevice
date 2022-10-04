@@ -75,14 +75,15 @@ func WithPerfNetwork(b bool) PerfOption {
 }
 
 type perfdClient struct {
-	option  *perfOption
-	i       *instruments
-	stop    chan struct{}        // used to stop perf client
-	cancels []context.CancelFunc // used to cancel all iterators
-	chanCPU chan []byte          // cpu channel
-	chanMem chan []byte          // mem channel
-	chanGPU chan []byte          // gpu channel
-	chanFPS chan []byte          // fps channel
+	option      *perfOption
+	i           *instruments
+	stop        chan struct{}        // used to stop perf client
+	cancels     []context.CancelFunc // used to cancel all iterators
+	chanCPU     chan []byte          // cpu channel
+	chanMem     chan []byte          // mem channel
+	chanGPU     chan []byte          // gpu channel
+	chanFPS     chan []byte          // fps channel
+	chanNetwork chan []byte          // network channel
 }
 
 func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient {
@@ -99,12 +100,13 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 	}
 
 	return &perfdClient{
-		i:       i.(*instruments),
-		option:  perfOption,
-		chanCPU: make(chan []byte, 10),
-		chanMem: make(chan []byte, 10),
-		chanGPU: make(chan []byte, 10),
-		chanFPS: make(chan []byte, 10),
+		i:           i.(*instruments),
+		option:      perfOption,
+		chanCPU:     make(chan []byte, 10),
+		chanMem:     make(chan []byte, 10),
+		chanGPU:     make(chan []byte, 10),
+		chanFPS:     make(chan []byte, 10),
+		chanNetwork: make(chan []byte, 10),
 	}
 }
 
@@ -121,6 +123,14 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 
 	if c.option.gpu || c.option.fps {
 		cancel, err := c.registerGraphicsOpengl(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		c.cancels = append(c.cancels, cancel)
+	}
+
+	if c.option.network {
+		cancel, err := c.registerNetworking(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -152,6 +162,11 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 					fmt.Println("fps: ", string(fpsBytes))
 					outCh <- fpsBytes
 				}
+			case networkBytes, ok := <-c.chanNetwork:
+				if ok && c.option.network {
+					fmt.Println("network: ", string(networkBytes))
+					outCh <- networkBytes
+				}
 			}
 		}
 	}()
@@ -164,6 +179,79 @@ func (c *perfdClient) Stop() {
 	for _, cancel := range c.cancels {
 		cancel()
 	}
+}
+
+func (c *perfdClient) registerNetworking(ctx context.Context) (
+	cancel context.CancelFunc, err error) {
+
+	chanID, err := c.i.requestChannel(instrumentsServiceNetworking)
+	if err != nil {
+		return nil, err
+	}
+
+	selector := "startMonitoring"
+	args := libimobiledevice.NewAuxBuffer()
+	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+		return nil, err
+	}
+	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			c.parseNetworking(m.Obj)
+		}
+	})
+
+	return nil, nil
+}
+
+func (c *perfdClient) parseNetworking(data interface{}) {
+	// data example (3 types):
+	// [
+	//   2
+	//   [
+	//     36756    // RxBytes
+	//     11180213 // RxPackets
+	//     32837    // TxBytes
+	//     8365982  // TxPackets
+	//     map[$class:9] map[$class:9] map[$class:9] map[$class:9] map[$class:9] 144 -1]
+	// ]
+	// [2 [205 435704 0 0 0 0 0 0.005 0.005 95 166]]
+	// [1 [[16 2 197 19 192 168 100 103 0 0 0 0 0 0 0 0] [16 2 1 187 117 174 183 75 0 0 0 0 0 0 0 0] 14 -2 262144 0 21 1]]
+	raw, ok := data.([]interface{})
+	if !ok || len(raw) != 2 {
+		return
+	}
+	if raw[0].(uint64) == 1 {
+		// TODO
+		return
+	}
+
+	rtxData, ok := raw[1].([]interface{})
+	if !ok {
+		return
+	}
+
+	netData := NetworkData{
+		Type:      "network",
+		TimeStamp: time.Now().Unix(),
+		RxBytes:   convert2Int64(rtxData[0]),
+		RxPackets: convert2Int64(rtxData[1]),
+		TxBytes:   convert2Int64(rtxData[2]),
+		TxPackets: convert2Int64(rtxData[3]),
+	}
+	netBytes, _ := json.Marshal(netData)
+	c.chanNetwork <- netBytes
+}
+
+type NetworkData struct {
+	Type      string `json:"type"` // network
+	TimeStamp int64  `json:"timestamp"`
+	RxBytes   int64  `json:"rxBytes"`
+	RxPackets int64  `json:"rxPackets"`
+	TxBytes   int64  `json:"txBytes"`
+	TxPackets int64  `json:"txPackets"`
 }
 
 func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
@@ -254,7 +342,7 @@ func (c *perfdClient) parseGpuFps(data interface{}) {
 
 type GPUData struct {
 	Type                string `json:"type"` // gpu
-	TimeStamp           int64  `json:"timeStamp"`
+	TimeStamp           int64  `json:"timestamp"`
 	TilerUtilization    int64  `json:"tilerUtilization"`    // 处理顶点的GPU时间占比
 	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
 	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
@@ -263,7 +351,7 @@ type GPUData struct {
 
 type FPSData struct {
 	Type      string `json:"type"` // fps
-	TimeStamp int64  `json:"timeStamp"`
+	TimeStamp int64  `json:"timestamp"`
 	FPS       int    `json:"fps"`
 }
 
@@ -488,6 +576,6 @@ func convert2Int64(num interface{}) int64 {
 	case uint:
 		return int64(value)
 	}
-	fmt.Printf("convert2Int64 failed: %+v", num)
+	fmt.Printf("convert2Int64 failed: %v, %T\n", num, num)
 	return -1
 }

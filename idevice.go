@@ -167,7 +167,7 @@ type Instruments interface {
 	StopSysmontapServer() (err error)
 	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
 
-	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan NetWorkingInfo, cancel context.CancelFunc, err error)
+	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan NetworkData, cancel context.CancelFunc, err error)
 
 	StopNetWorkingServer() (err error)
 }
