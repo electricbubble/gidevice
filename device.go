@@ -675,8 +675,8 @@ func (d *device) GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCance
 		}
 	}
 
-	chanFPS := make(chan FPSInfo)
-	chanGPU := make(chan GPUInfo)
+	chanFPS := make(chan FPSData)
+	chanGPU := make(chan GPUData)
 	var cancelOpengl context.CancelFunc
 
 	if opts.OpenChanGPU || opts.OpenChanFPS {

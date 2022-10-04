@@ -499,14 +499,14 @@ func (i *instruments) StopNetWorkingServer() (err error) {
 	return nil
 }
 
-func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan FPSInfo, chanGPU chan GPUInfo, cancel context.CancelFunc, err error) {
+func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan FPSData, chanGPU chan GPUData, cancel context.CancelFunc, err error) {
 	var id uint32
 	if ctxParent == nil {
 		return nil, nil, nil, fmt.Errorf("missing context")
 	}
 	ctx, cancelFunc := context.WithCancel(ctxParent)
-	_outFPS := make(chan FPSInfo)
-	_outGPU := make(chan GPUInfo)
+	_outFPS := make(chan FPSData)
+	_outGPU := make(chan GPUData)
 	if id, err = i.requestChannel(instrumentsServiceGraphicsOpengl); err != nil {
 		return nil, nil, cancelFunc, err
 	}
@@ -548,7 +548,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 			var tilerUtilization = mess.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
 			var rendererUtilization = mess.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
 
-			var infoGPU GPUInfo
+			var infoGPU GPUData
 
 			infoGPU.DeviceUtilization = convert2Int64(deviceUtilization)
 			infoGPU.TilerUtilization = convert2Int64(tilerUtilization)
@@ -556,7 +556,7 @@ func (i *instruments) StartOpenglServer(ctxParent context.Context) (chanFPS chan
 			infoGPU.TimeStamp = time.Now().UnixNano()
 			_outGPU <- infoGPU
 
-			var infoFPS FPSInfo
+			var infoFPS FPSData
 			var fps = mess.(map[string]interface{})["CoreAnimationFramesPerSecond"]
 			infoFPS.FPS = int(convert2Int64(fps))
 			infoFPS.TimeStamp = time.Now().UnixNano()
@@ -627,19 +627,6 @@ type DeviceInfo struct {
 	ProductType       string `json:"_productType"`
 	ProductVersion    string `json:"_productVersion"`
 	XRDeviceClassName string `json:"_xrdeviceClassName"`
-}
-
-type FPSInfo struct {
-	FPS       int   `json:"fps"`
-	TimeStamp int64 `json:"timeStamp"`
-}
-
-type GPUInfo struct {
-	TilerUtilization    int64  `json:"tilerUtilization"` // 处理顶点的GPU时间占比
-	TimeStamp           int64  `json:"timeStamp"`
-	Mess                string `json:"mess,omitempty"`      // 提示信息，当PID没输入时提示
-	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
-	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
 }
 
 type NetWorkingInfo struct {

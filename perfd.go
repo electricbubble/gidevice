@@ -81,6 +81,8 @@ type perfdClient struct {
 	cancels []context.CancelFunc // used to cancel all iterators
 	chanCPU chan []byte          // cpu channel
 	chanMem chan []byte          // mem channel
+	chanGPU chan []byte          // gpu channel
+	chanFPS chan []byte          // fps channel
 }
 
 func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient {
@@ -101,6 +103,8 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		option:  perfOption,
 		chanCPU: make(chan []byte, 10),
 		chanMem: make(chan []byte, 10),
+		chanGPU: make(chan []byte, 10),
+		chanFPS: make(chan []byte, 10),
 	}
 }
 
@@ -108,7 +112,15 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
 	if c.option.cpu || c.option.mem {
-		cancel, err := c.registerCPUMem(c.option.pid, context.Background())
+		cancel, err := c.registerSysmontap(c.option.pid, context.Background())
+		if err != nil {
+			return nil, err
+		}
+		c.cancels = append(c.cancels, cancel)
+	}
+
+	if c.option.gpu || c.option.fps {
+		cancel, err := c.registerGraphicsOpengl(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -130,6 +142,16 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 					fmt.Println("mem: ", string(memBytes))
 					outCh <- memBytes
 				}
+			case gpuBytes, ok := <-c.chanGPU:
+				if ok && c.option.gpu {
+					fmt.Println("gpu: ", string(gpuBytes))
+					outCh <- gpuBytes
+				}
+			case fpsBytes, ok := <-c.chanFPS:
+				if ok && c.option.fps {
+					fmt.Println("fps: ", string(fpsBytes))
+					outCh <- fpsBytes
+				}
 			}
 		}
 	}()
@@ -144,7 +166,108 @@ func (c *perfdClient) Stop() {
 	}
 }
 
-func (c *perfdClient) registerCPUMem(pid string, ctx context.Context) (
+func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
+	cancel context.CancelFunc, err error) {
+
+	chanID, err := c.i.requestChannel(instrumentsServiceGraphicsOpengl)
+	if err != nil {
+		return nil, err
+	}
+
+	selector := "availableStatistics"
+	args := libimobiledevice.NewAuxBuffer()
+	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+		return nil, err
+	}
+
+	selector = "setSamplingRate:"
+	if err = args.AppendObject(0.0); err != nil {
+		return nil, err
+	}
+	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+		return nil, err
+	}
+
+	selector = "startSamplingAtTimeInterval:processIdentifier:"
+	args = libimobiledevice.NewAuxBuffer()
+	if err = args.AppendObject(0); err != nil {
+		return nil, err
+	}
+	if err = args.AppendObject(0); err != nil {
+		return nil, err
+	}
+	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+		return nil, err
+	}
+
+	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			c.parseGpuFps(m.Obj)
+		}
+	})
+
+	return
+}
+
+func (c *perfdClient) parseGpuFps(data interface{}) {
+	// data example:
+	// map[
+	//   Alloc system memory:50167808
+	//   Allocated PB Size:1179648
+	//   CoreAnimationFramesPerSecond:0
+	//   Device Utilization %:0
+	//   IOGLBundleName:Built-In
+	//   In use system memory:10633216
+	//   Renderer Utilization %:0
+	//   SplitSceneCount:0
+	//   TiledSceneBytes:0
+	//   Tiler Utilization %:0
+	//   XRVideoCardRunTimeStamp:1010679
+	//   recoveryCount:0
+	// ]
+	var deviceUtilization = data.(map[string]interface{})["Device Utilization %"]     // Device Utilization
+	var tilerUtilization = data.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
+	var rendererUtilization = data.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
+
+	gpuInfo := GPUData{
+		Type:                "gpu",
+		TimeStamp:           time.Now().Unix(),
+		DeviceUtilization:   convert2Int64(deviceUtilization),
+		TilerUtilization:    convert2Int64(tilerUtilization),
+		RendererUtilization: convert2Int64(rendererUtilization),
+	}
+	gpuBytes, _ := json.Marshal(gpuInfo)
+	c.chanGPU <- gpuBytes
+
+	var fps = data.(map[string]interface{})["CoreAnimationFramesPerSecond"]
+	fpsInfo := FPSData{
+		Type:      "fps",
+		TimeStamp: time.Now().Unix(),
+		FPS:       int(convert2Int64(fps)),
+	}
+	fpsBytes, _ := json.Marshal(fpsInfo)
+	c.chanFPS <- fpsBytes
+}
+
+type GPUData struct {
+	Type                string `json:"type"` // gpu
+	TimeStamp           int64  `json:"timeStamp"`
+	TilerUtilization    int64  `json:"tilerUtilization"`    // 处理顶点的GPU时间占比
+	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
+	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
+	Msg                 string `json:"msg,omitempty"`       // 提示信息
+}
+
+type FPSData struct {
+	Type      string `json:"type"` // fps
+	TimeStamp int64  `json:"timeStamp"`
+	FPS       int    `json:"fps"`
+}
+
+func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
 	chanID, err := c.i.requestChannel(instrumentsServiceSysmontap)

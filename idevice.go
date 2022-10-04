@@ -158,7 +158,7 @@ type Instruments interface {
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
 
-	StartOpenglServer(ctx context.Context) (chanFPS chan FPSInfo, chanGPU chan GPUInfo, cancel context.CancelFunc, err error)
+	StartOpenglServer(ctx context.Context) (chanFPS chan FPSData, chanGPU chan GPUData, cancel context.CancelFunc, err error)
 
 	StopOpenglServer() (err error)
 
