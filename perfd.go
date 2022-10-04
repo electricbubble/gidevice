@@ -143,27 +143,27 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 			case <-c.stop:
 				return
 			case cpuBytes, ok := <-c.chanCPU:
-				if ok && c.option.cpu {
+				if ok {
 					fmt.Println("cpu: ", string(cpuBytes))
 					outCh <- cpuBytes
 				}
 			case memBytes, ok := <-c.chanMem:
-				if ok && c.option.mem {
+				if ok {
 					fmt.Println("mem: ", string(memBytes))
 					outCh <- memBytes
 				}
 			case gpuBytes, ok := <-c.chanGPU:
-				if ok && c.option.gpu {
+				if ok {
 					fmt.Println("gpu: ", string(gpuBytes))
 					outCh <- gpuBytes
 				}
 			case fpsBytes, ok := <-c.chanFPS:
-				if ok && c.option.fps {
+				if ok {
 					fmt.Println("fps: ", string(fpsBytes))
 					outCh <- fpsBytes
 				}
 			case networkBytes, ok := <-c.chanNetwork:
-				if ok && c.option.network {
+				if ok {
 					fmt.Println("network: ", string(networkBytes))
 					outCh <- networkBytes
 				}
@@ -209,7 +209,7 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 func (c *perfdClient) parseNetworking(data interface{}) {
 	// data example (3 types):
 	// [
-	//   2
+	//   2          // type
 	//   [
 	//     36756    // RxBytes
 	//     11180213 // RxPackets
@@ -219,39 +219,48 @@ func (c *perfdClient) parseNetworking(data interface{}) {
 	// ]
 	// [2 [205 435704 0 0 0 0 0 0.005 0.005 95 166]]
 	// [1 [[16 2 197 19 192 168 100 103 0 0 0 0 0 0 0 0] [16 2 1 187 117 174 183 75 0 0 0 0 0 0 0 0] 14 -2 262144 0 21 1]]
+
+	netData := NetworkData{
+		Type:      "network",
+		TimeStamp: time.Now().Unix(),
+	}
+
+	defer func() {
+		netBytes, _ := json.Marshal(netData)
+		c.chanNetwork <- netBytes
+	}()
+
 	raw, ok := data.([]interface{})
 	if !ok || len(raw) != 2 {
+		netData.Msg = fmt.Sprintf("invalid networking data: %v", data)
 		return
 	}
 	if raw[0].(uint64) == 1 {
 		// TODO
+		netData.Msg = fmt.Sprintf("unhandled networking data: %v", data)
 		return
 	}
 
 	rtxData, ok := raw[1].([]interface{})
 	if !ok {
+		netData.Msg = fmt.Sprintf("unexpected networking data: %v", data)
 		return
 	}
 
-	netData := NetworkData{
-		Type:      "network",
-		TimeStamp: time.Now().Unix(),
-		RxBytes:   convert2Int64(rtxData[0]),
-		RxPackets: convert2Int64(rtxData[1]),
-		TxBytes:   convert2Int64(rtxData[2]),
-		TxPackets: convert2Int64(rtxData[3]),
-	}
-	netBytes, _ := json.Marshal(netData)
-	c.chanNetwork <- netBytes
+	netData.RxBytes = convert2Int64(rtxData[0])
+	netData.RxPackets = convert2Int64(rtxData[1])
+	netData.TxBytes = convert2Int64(rtxData[2])
+	netData.TxPackets = convert2Int64(rtxData[3])
 }
 
 type NetworkData struct {
 	Type      string `json:"type"` // network
 	TimeStamp int64  `json:"timestamp"`
-	RxBytes   int64  `json:"rxBytes"`
-	RxPackets int64  `json:"rxPackets"`
-	TxBytes   int64  `json:"txBytes"`
-	TxPackets int64  `json:"txPackets"`
+	RxBytes   int64  `json:"rx_bytes"`
+	RxPackets int64  `json:"rx_packets"`
+	TxBytes   int64  `json:"tx_bytes"`
+	TxPackets int64  `json:"tx_packets"`
+	Msg       string `json:"msg,omitempty"` // message for invalid data
 }
 
 func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
@@ -305,54 +314,69 @@ func (c *perfdClient) parseGpuFps(data interface{}) {
 	// map[
 	//   Alloc system memory:50167808
 	//   Allocated PB Size:1179648
-	//   CoreAnimationFramesPerSecond:0
-	//   Device Utilization %:0
+	//   CoreAnimationFramesPerSecond:0  // fps from GPU
+	//   Device Utilization %:0          // device
 	//   IOGLBundleName:Built-In
 	//   In use system memory:10633216
-	//   Renderer Utilization %:0
+	//   Renderer Utilization %:0        // renderer
 	//   SplitSceneCount:0
 	//   TiledSceneBytes:0
-	//   Tiler Utilization %:0
+	//   Tiler Utilization %:0           // tiler
 	//   XRVideoCardRunTimeStamp:1010679
 	//   recoveryCount:0
 	// ]
-	var deviceUtilization = data.(map[string]interface{})["Device Utilization %"]     // Device Utilization
-	var tilerUtilization = data.(map[string]interface{})["Tiler Utilization %"]       // Tiler Utilization
-	var rendererUtilization = data.(map[string]interface{})["Renderer Utilization %"] // Renderer Utilization
 
+	timestamp := time.Now().Unix()
 	gpuInfo := GPUData{
-		Type:                "gpu",
-		TimeStamp:           time.Now().Unix(),
-		DeviceUtilization:   convert2Int64(deviceUtilization),
-		TilerUtilization:    convert2Int64(tilerUtilization),
-		RendererUtilization: convert2Int64(rendererUtilization),
+		Type:      "gpu",
+		TimeStamp: timestamp,
 	}
-	gpuBytes, _ := json.Marshal(gpuInfo)
-	c.chanGPU <- gpuBytes
-
-	var fps = data.(map[string]interface{})["CoreAnimationFramesPerSecond"]
 	fpsInfo := FPSData{
 		Type:      "fps",
-		TimeStamp: time.Now().Unix(),
-		FPS:       int(convert2Int64(fps)),
+		TimeStamp: timestamp,
 	}
-	fpsBytes, _ := json.Marshal(fpsInfo)
-	c.chanFPS <- fpsBytes
+
+	defer func() {
+		if c.option.gpu {
+			gpuBytes, _ := json.Marshal(gpuInfo)
+			c.chanGPU <- gpuBytes
+		}
+		if c.option.fps {
+			fpsBytes, _ := json.Marshal(fpsInfo)
+			c.chanFPS <- fpsBytes
+		}
+	}()
+
+	raw, ok := data.(map[string]interface{})
+	if !ok {
+		gpuInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
+		fpsInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
+		return
+	}
+
+	// gpu
+	gpuInfo.DeviceUtilization = convert2Int64(raw["Device Utilization %"])
+	gpuInfo.TilerUtilization = convert2Int64(raw["Tiler Utilization %"])
+	gpuInfo.RendererUtilization = convert2Int64(raw["Renderer Utilization %"])
+
+	// fps
+	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
 }
 
 type GPUData struct {
 	Type                string `json:"type"` // gpu
 	TimeStamp           int64  `json:"timestamp"`
-	TilerUtilization    int64  `json:"tilerUtilization"`    // 处理顶点的GPU时间占比
-	DeviceUtilization   int64  `json:"deviceUtilization"`   // 设备利用率
-	RendererUtilization int64  `json:"rendererUtilization"` // 渲染器利用率
-	Msg                 string `json:"msg,omitempty"`       // 提示信息
+	TilerUtilization    int64  `json:"tiler_utilization"`    // 处理顶点的 GPU 时间占比
+	DeviceUtilization   int64  `json:"device_utilization"`   // 设备利用率
+	RendererUtilization int64  `json:"renderer_utilization"` // 渲染器利用率
+	Msg                 string `json:"msg,omitempty"`        // message for invalid data
 }
 
 type FPSData struct {
 	Type      string `json:"type"` // fps
 	TimeStamp int64  `json:"timestamp"`
 	FPS       int    `json:"fps"`
+	Msg       string `json:"msg,omitempty"` // message for invalid data
 }
 
 func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
@@ -414,8 +438,33 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 }
 
 func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
+	timestamp := time.Now().Unix()
+	cpuInfo := CPUData{
+		Type:      "cpu",
+		TimeStamp: timestamp,
+		ProcPID:   pid,
+	}
+	memInfo := MemData{
+		Type:      "mem",
+		TimeStamp: timestamp,
+		ProcPID:   pid,
+	}
+
+	defer func() {
+		if c.option.cpu {
+			cpuBytes, _ := json.Marshal(cpuInfo)
+			c.chanCPU <- cpuBytes
+		}
+		if c.option.mem {
+			memBytes, _ := json.Marshal(memInfo)
+			c.chanMem <- memBytes
+		}
+	}()
+
 	messArray, ok := data.([]interface{})
 	if !ok || len(messArray) != 2 {
+		cpuInfo.Msg = fmt.Sprintf("invalid sysmontap data: %v", data)
+		memInfo.Msg = fmt.Sprintf("invalid sysmontap data: %v", data)
 		return
 	}
 
@@ -425,7 +474,7 @@ func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 		systemInfo, processInfoList = processInfoList, systemInfo
 	}
 	if systemInfo["CPUCount"] == nil {
-		fmt.Printf("invalid system info: %v\n", systemInfo)
+		cpuInfo.Msg = fmt.Sprintf("invalid system info: %v", systemInfo)
 		return
 	}
 	// systemInfo example:
@@ -451,7 +500,8 @@ func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 	var sysCpuUsage = systemInfo["SystemCPUUsage"].(map[string]interface{})
 
 	if processInfoList["Processes"] == nil {
-		fmt.Printf("invalid process info list: %v\n", processInfoList)
+		cpuInfo.Msg = fmt.Sprintf("invalid process info list: %v", processInfoList)
+		memInfo.Msg = fmt.Sprintf("invalid process info list: %v", processInfoList)
 		return
 	}
 	// processInfoList example:
@@ -465,21 +515,12 @@ func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 	//   EndMachAbsTime:2514112708690
 	//   Type:5
 	// ]
+
+	// cpu
+	cpuInfo.CPUCount = int(cpuCount.(uint64))
+	cpuInfo.SysCPUUsageTotalLoad = sysCpuUsage["CPU_TotalLoad"].(float64)
+
 	processes := processInfoList["Processes"].(map[string]interface{})
-
-	cpuInfo := CPUData{
-		Type:                 "cpu",
-		TimeStamp:            time.Now().Unix(),
-		CPUCount:             int(cpuCount.(uint64)),
-		SysCPUUsageTotalLoad: sysCpuUsage["CPU_TotalLoad"].(float64),
-		ProcPID:              pid,
-	}
-	memInfo := MemData{
-		Type:      "mem",
-		TimeStamp: time.Now().Unix(),
-		ProcPID:   pid,
-	}
-
 	procData, ok := processes[pid]
 	processInfo := convertProcessData(procData)
 	if ok && processInfo != nil {
@@ -494,44 +535,39 @@ func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 		memInfo.PhysMemory = convert2Int64(processInfo["physFootprint"])
 	} else {
 		// cpu
-		cpuInfo.Msg = "invalid PID"
+		cpuInfo.Msg = fmt.Sprintf("pid %s not found", pid)
 		// mem
-		memInfo.Msg = "invalid PID"
+		memInfo.Msg = fmt.Sprintf("pid %s not found", pid)
 		memInfo.Vss = -1
 		memInfo.Rss = -1
 		memInfo.Anon = -1
 		memInfo.PhysMemory = -1
 	}
-
-	cpuBytes, _ := json.Marshal(cpuInfo)
-	memBytes, _ := json.Marshal(memInfo)
-	c.chanCPU <- cpuBytes
-	c.chanMem <- memBytes
 }
 
 type CPUData struct {
 	Type      string `json:"type"` // cpu
 	TimeStamp int64  `json:"timestamp"`
-	Msg       string `json:"msg,omitempty"` // 提示信息
+	Msg       string `json:"msg,omitempty"` // message for invalid data
 	// system
-	CPUCount             int     `json:"cpuCount"`             // CPU总数
-	SysCPUUsageTotalLoad float64 `json:"sysCpuUsageTotalLoad"` // 系统总体CPU占用
+	CPUCount             int     `json:"cpu_count"`     // CPU总数
+	SysCPUUsageTotalLoad float64 `json:"sys_cpu_usage"` // 系统总体CPU占用
 	// process
-	ProcPID            string  `json:"procPID"`                      // 进程 PID
-	ProcCPUUsage       float64 `json:"procCpuUsage,omitempty"`       // 单个进程的CPU使用率
-	ProcAttrCtxSwitch  int64   `json:"procAttrCtxSwitch,omitempty"`  // 上下文切换数
-	ProcAttrIntWakeups int64   `json:"procAttrIntWakeups,omitempty"` // 唤醒数
+	ProcPID            string  `json:"pid"`                             // 进程 PID
+	ProcCPUUsage       float64 `json:"proc_cpu_usage,omitempty"`        // 单个进程的CPU使用率
+	ProcAttrCtxSwitch  int64   `json:"proc_attr_ctx_switch,omitempty"`  // 上下文切换数
+	ProcAttrIntWakeups int64   `json:"proc_attr_int_wakeups,omitempty"` // 唤醒数
 }
 
 type MemData struct {
 	Type       string `json:"type"` // mem
 	TimeStamp  int64  `json:"timestamp"`
 	Anon       int64  `json:"anon"`          // 虚拟内存
-	PhysMemory int64  `json:"physMemory"`    // 物理内存
+	PhysMemory int64  `json:"phys_memory"`   // 物理内存
 	Rss        int64  `json:"rss"`           // 总内存
 	Vss        int64  `json:"vss"`           // 虚拟内存
-	ProcPID    string `json:"procPID"`       // 进程 PID
-	Msg        string `json:"msg,omitempty"` // 提示信息
+	ProcPID    string `json:"pid"`           // 进程 PID
+	Msg        string `json:"msg,omitempty"` // message for invalid data
 }
 
 func convertProcessData(procData interface{}) map[string]interface{} {

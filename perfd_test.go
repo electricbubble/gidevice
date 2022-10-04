@@ -21,6 +21,7 @@ func TestPerfCPUMem(t *testing.T) {
 	for {
 		select {
 		case <-timer.C:
+			dev.PerfStop()
 			return
 		case d := <-data:
 			t.Log(string(d))
@@ -44,6 +45,7 @@ func TestPerfGPU(t *testing.T) {
 	for {
 		select {
 		case <-timer.C:
+			dev.PerfStop()
 			return
 		case d := <-data:
 			t.Log(string(d))
@@ -67,6 +69,7 @@ func TestPerfFPS(t *testing.T) {
 	for {
 		select {
 		case <-timer.C:
+			dev.PerfStop()
 			return
 		case d := <-data:
 			t.Log(string(d))
@@ -90,6 +93,7 @@ func TestPerfNetwork(t *testing.T) {
 	for {
 		select {
 		case <-timer.C:
+			dev.PerfStop()
 			return
 		case d := <-data:
 			t.Log(string(d))
