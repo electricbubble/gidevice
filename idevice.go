@@ -77,8 +77,6 @@ type Device interface {
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
 
-	GetPerfmon(opts *PerfmonOption) (out chan interface{}, outCancel context.CancelFunc, perfErr error)
-
 	PerfStart(opts ...PerfOption) (data <-chan []byte, err error)
 	PerfStop()
 }
@@ -157,19 +155,6 @@ type Instruments interface {
 	// SysMonStart(cfg ...interface{}) (_ interface{}, err error)
 
 	registerCallback(obj string, cb func(m libimobiledevice.DTXMessageResult))
-
-	StartOpenglServer(ctx context.Context) (chanFPS chan FPSData, chanGPU chan GPUData, cancel context.CancelFunc, err error)
-
-	StopOpenglServer() (err error)
-
-	StartSysmontapServer(pid string, ctx context.Context) (chanCPU chan CPUData, chanMem chan MemData, cancel context.CancelFunc, err error)
-
-	StopSysmontapServer() (err error)
-	//ProcessNetwork(pid int) (out <-chan interface{}, cancel context.CancelFunc, err error)
-
-	StartNetWorkingServer(ctx context.Context) (chanNetWorking chan NetworkData, cancel context.CancelFunc, err error)
-
-	StopNetWorkingServer() (err error)
 }
 
 type Testmanagerd interface {
@@ -377,15 +362,6 @@ func WithUpdateToken(updateToken string) AppListOption {
 	return func(opt *appListOption) {
 		opt.updateToken = updateToken
 	}
-}
-
-type PerfmonOption struct {
-	PID             string
-	OpenChanGPU     bool
-	OpenChanFPS     bool
-	OpenChanCPU     bool
-	OpenChanMEM     bool
-	OpenChanNetWork bool
 }
 
 type Process struct {

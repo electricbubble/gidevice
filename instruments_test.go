@@ -22,7 +22,7 @@ func setupInstrumentsSrv(t *testing.T) {
 func Test_instruments_AppLaunch(t *testing.T) {
 	setupInstrumentsSrv(t)
 
-	bundleID = "com.DataMesh.CheckList"
+	// bundleID = "com.leixipaopao.WebDriverAgentRunner.xctrunner"
 
 	// pid, err := dev.AppLaunch(bundleID)
 	pid, err := instrumentsSrv.AppLaunch(bundleID)

@@ -1,7 +1,6 @@
 package giDevice
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -69,7 +68,7 @@ func Test_device_SavePairRecord(t *testing.T) {
 func Test_device_XCTest(t *testing.T) {
 	setupLockdownSrv(t)
 
-	bundleID = "com.DataMesh.CheckList"
+	bundleID = "com.leixipaopao.WebDriverAgentRunner.xctrunner"
 	out, cancel, err := dev.XCTest(bundleID)
 	// out, cancel, err := dev.XCTest(bundleID, WithXCTestEnv(map[string]interface{}{"USE_PORT": 8222, "MJPEG_SERVER_PORT": 8333}))
 	if err != nil {
@@ -153,51 +152,6 @@ func Test_device_Reboot(t *testing.T) {
 func Test_device_Shutdown(t *testing.T) {
 	setupDevice(t)
 	dev.Shutdown()
-}
-
-func Test_device_Perf(t *testing.T) {
-	//setupDevice(t)
-	//SetDebug(true,true)
-	setupLockdownSrv(t)
-
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt, os.Kill)
-
-	var opts = &PerfmonOption{
-		//PID: "0",
-		OpenChanNetWork: true,
-		// OpenChanFPS: true,
-		// OpenChanMEM: true,
-		//OpenChanCPU: true,
-		//OpenChanGPU: true,
-	}
-
-	outData, cannel, err := dev.GetPerfmon(opts)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(0)
-	}
-	var timeLast = time.Now().Unix()
-	for {
-		select {
-		case <-c:
-			if cannel != nil {
-				cannel()
-			}
-		default:
-			data, ok := <-outData
-			if !ok {
-				fmt.Println("end get perfmon data")
-				return
-			}
-			result, _ := json.MarshalIndent(data, "", "\t")
-			fmt.Println(string(result))
-			if time.Now().Unix()-timeLast > 60 {
-				cannel()
-			}
-		}
-	}
-
 }
 
 func Test_device_InstallationProxyBrowse(t *testing.T) {
