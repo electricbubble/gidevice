@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	"io"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 )
 
 const (
@@ -242,7 +243,6 @@ func (c *dtxMessageClient) ReceiveDTXMessage() (result *DTXMessageResult, err er
 		c.mu.Lock()
 		c.resultMap[sk] = result
 		c.mu.Unlock()
-
 	}
 
 	return

@@ -102,6 +102,7 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 	return &perfdClient{
 		i:           i.(*instruments),
 		option:      perfOption,
+		stop:        make(chan struct{}),
 		chanCPU:     make(chan []byte, 10),
 		chanMem:     make(chan []byte, 10),
 		chanGPU:     make(chan []byte, 10),
@@ -194,6 +195,8 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
 		return nil, err
 	}
+
+	ctx, cancel = context.WithCancel(ctx)
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
@@ -203,7 +206,7 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 		}
 	})
 
-	return nil, nil
+	return
 }
 
 func (c *perfdClient) parseNetworking(data interface{}) {
@@ -297,6 +300,7 @@ func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
 		return nil, err
 	}
 
+	ctx, cancel = context.WithCancel(ctx)
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
@@ -419,7 +423,7 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 
 	// start
 	args = libimobiledevice.NewAuxBuffer()
-	if _, err = c.i.client.Invoke("start", args, chanID, true); err != nil {
+	if _, err = c.i.client.Invoke("start", args, chanID, false); err != nil {
 		return nil, err
 	}
 
