@@ -22,10 +22,12 @@ type perfOption struct {
 	fps        bool
 	network    bool
 	// process
-	bundleID string
+	bundleID string // TODO
 	pid      string
 	// config
-	outputInterval int // ms
+	outputInterval    int // ms
+	systemAttributes  []string
+	processAttributes []string
 }
 
 func defaulPerfOption() *perfOption {
@@ -38,6 +40,31 @@ func defaulPerfOption() *perfOption {
 		fps:            false,
 		network:        false,
 		outputInterval: 1000, // default 1000ms
+		systemAttributes: []string{
+			// disk
+			"diskBytesRead",
+			"diskBytesWritten",
+			"diskReadOps",
+			"diskWriteOps",
+			// memory
+			"vmCompressorPageCount",
+			"vmExtPageCount",
+			"vmFreeCount",
+			"vmIntPageCount",
+			"vmPurgeableCount",
+			"vmWireCount",
+			"vmUsedCount",
+			"__vmSwapUsage",
+			// network
+			"netBytesIn",
+			"netBytesOut",
+			"netPacketsIn",
+			"netPacketsOut",
+		},
+		processAttributes: []string{
+			"pid",
+			"cpuUsage",
+		},
 	}
 }
 
@@ -73,9 +100,9 @@ func WithPerfBundleID(bundleID string) PerfOption {
 	}
 }
 
-func WithPerfPID(pid string) PerfOption {
+func WithPerfPID(pid int) PerfOption {
 	return func(opt *perfOption) {
-		opt.pid = pid
+		opt.pid = strconv.Itoa(pid)
 	}
 }
 
@@ -103,6 +130,18 @@ func WithPerfOutputInterval(intervalMilliseconds int) PerfOption {
 	}
 }
 
+func WithPerfProcessAttributes(attrs ...string) PerfOption {
+	return func(opt *perfOption) {
+		opt.processAttributes = attrs
+	}
+}
+
+func WithPerfSystemAttributes(attrs ...string) PerfOption {
+	return func(opt *perfOption) {
+		opt.systemAttributes = attrs
+	}
+}
+
 type perfdClient struct {
 	option         *perfOption
 	i              *instruments
@@ -115,6 +154,7 @@ type perfdClient struct {
 	chanGPU        chan []byte          // gpu channel
 	chanFPS        chan []byte          // fps channel
 	chanNetwork    chan []byte          // network channel
+	chanProcess    chan []byte          // process channel
 }
 
 func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient {
@@ -141,14 +181,15 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		chanGPU:        make(chan []byte, 10),
 		chanFPS:        make(chan []byte, 10),
 		chanNetwork:    make(chan []byte, 10),
+		chanProcess:    make(chan []byte, 10),
 	}
 }
 
 func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
-	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk || c.option.sysNetwork {
-		cancel, err := c.registerSystemMonitor(context.Background())
+	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk || c.option.sysNetwork || c.option.pid != "" {
+		cancel, err := c.registerSysmontap(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -211,6 +252,10 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 			case networkBytes, ok := <-c.chanNetwork:
 				if ok {
 					outCh <- networkBytes
+				}
+			case processBytes, ok := <-c.chanProcess:
+				if ok {
+					outCh <- processBytes
 				}
 			}
 		}
@@ -567,43 +612,17 @@ type FPSData struct {
 	FPS          int `json:"fps"`
 }
 
-var systemAttributes = []string{
-	"threadCount",
-	// disk
-	"diskBytesRead",
-	"diskBytesWritten",
-	"diskReadOps",
-	"diskWriteOps",
-	// memory
-	"vmCompressorPageCount",
-	"vmExtPageCount",
-	"vmFreeCount",
-	"vmIntPageCount",
-	"vmPurgeableCount",
-	"vmWireCount",
-	"vmUsedCount",
-	"__vmSwapUsage",
-	// network
-	"netBytesIn",
-	"netBytesOut",
-	"netPacketsIn",
-	"netPacketsOut",
-}
-
-func (c *perfdClient) registerSystemMonitor(ctx context.Context) (
+func (c *perfdClient) registerSysmontap(ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
 	// set config
 	config := map[string]interface{}{
 		"bm":             0,
 		"cpuUsage":       true,
-		"sampleInterval": time.Second * 1,         // 1s
-		"ur":             c.option.outputInterval, // 输出频率
-		"procAttrs": []string{
-			"name",
-			"pid",
-		},
-		"sysAttrs": systemAttributes, // system performance
+		"sampleInterval": time.Second * 1,            // 1s
+		"ur":             c.option.outputInterval,    // 输出频率
+		"procAttrs":      c.option.processAttributes, // process performance
+		"sysAttrs":       c.option.systemAttributes,  // system performance
 	}
 	if _, err = c.i.call(
 		instrumentsServiceSysmontap,
@@ -629,19 +648,88 @@ func (c *perfdClient) registerSystemMonitor(ctx context.Context) (
 			c.i.call(instrumentsServiceSysmontap, "stop")
 			return
 		default:
-			c.parseSystemMonitor(m.Obj)
+			dataArray, ok := m.Obj.([]interface{})
+			if !ok || len(dataArray) != 2 {
+				return
+			}
+			if c.option.pid != "" {
+				c.parseProcessData(dataArray)
+			} else {
+				c.parseSystemData(dataArray)
+			}
 		}
 	})
 
 	return cancel, err
 }
 
-func (c *perfdClient) parseSystemMonitor(data interface{}) {
-	dataArray, ok := data.([]interface{})
-	if !ok || len(dataArray) != 2 {
+func (c *perfdClient) parseProcessData(dataArray []interface{}) {
+	// dataArray example:
+	// [
+	//   map[
+	//     CPUCount:2
+	//     EnabledCPUs:2
+	//     PerCPUUsage:[
+	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.6363636363636402 CPU_UserLoad:-1]
+	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:2.7272727272727195 CPU_UserLoad:-1]
+	//     ]
+	//     System:[36408520704 6897049600 3031160 773697 15596 61940 1297 26942 588 17020 127346 1835008 119718056 107009899 174046 103548]
+	//     SystemCPUUsage:map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:6.36363636363636 CPU_UserLoad:-1]
+	//     StartMachAbsTime:5896602132889
+	//     EndMachAbsTime:5896628486761
+	//     Type:41
+	//  ]
+	//  map[
+	//    Processes:map[
+	//      0:[1.3582834340402803 0]
+	//      124:[0.011456702068519481 124]
+	//      136:[0.05468332721703649 136]
+	//    ]
+	//    StartMachAbsTime:5896602295095
+	//    EndMachAbsTime:5896628780514
+	//    Type:5
+	//   ]
+	// ]
+
+	processData := make(map[string]interface{})
+	processData["type"] = "process"
+	processData["timestamp"] = time.Now().Unix()
+	processData["pid"] = c.option.pid
+
+	defer func() {
+		processBytes, _ := json.Marshal(processData)
+		c.chanProcess <- processBytes
+	}()
+
+	systemInfo := dataArray[0].(map[string]interface{})
+	processInfo := dataArray[1].(map[string]interface{})
+	if _, ok := systemInfo["System"]; !ok {
+		systemInfo, processInfo = processInfo, systemInfo
+	}
+
+	var targetProcessValue []interface{}
+	processList := processInfo["Processes"].(map[string]interface{})
+	for pid, v := range processList {
+		if pid != c.option.pid {
+			continue
+		}
+		targetProcessValue = v.([]interface{})
+	}
+
+	if targetProcessValue == nil {
+		processData["msg"] = fmt.Sprintf("process %s not found", c.option.pid)
 		return
 	}
 
+	processAttributesMap := make(map[string]interface{})
+	for idx, value := range c.option.processAttributes {
+		processAttributesMap[value] = convert2Int64(targetProcessValue[idx])
+	}
+
+	processData["attributes"] = processAttributesMap
+}
+
+func (c *perfdClient) parseSystemData(dataArray []interface{}) {
 	timestamp := time.Now().Unix()
 	var systemInfo map[string]interface{}
 	data1 := dataArray[0].(map[string]interface{})
@@ -690,7 +778,7 @@ func (c *perfdClient) parseSystemMonitor(data interface{}) {
 
 	systemAttributesValue := systemInfo["System"].([]interface{})
 	systemAttributesMap := make(map[string]int64)
-	for idx, value := range systemAttributes {
+	for idx, value := range c.option.systemAttributes {
 		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
 	}
 

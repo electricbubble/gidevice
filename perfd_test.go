@@ -32,6 +32,30 @@ func TestPerfSystemMonitor(t *testing.T) {
 	}
 }
 
+func TestPerfProcessMonitor(t *testing.T) {
+	setupLockdownSrv(t)
+
+	data, err := dev.PerfStart(
+		WithPerfProcessAttributes("pid", "cpuUsage", "memAnon"),
+		WithPerfOutputInterval(1000),
+		WithPerfPID(100),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timer := time.NewTimer(time.Duration(time.Second * 10))
+	for {
+		select {
+		case <-timer.C:
+			dev.PerfStop()
+			return
+		case d := <-data:
+			fmt.Println(string(d))
+		}
+	}
+}
+
 func TestPerfGPU(t *testing.T) {
 	setupLockdownSrv(t)
 
