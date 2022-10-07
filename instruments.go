@@ -44,6 +44,24 @@ func (i *instruments) requestChannel(channel string) (id uint32, err error) {
 	return i.client.RequestChannel(channel)
 }
 
+func (i *instruments) call(channel, selector string, auxiliaries ...interface{}) (
+	result *libimobiledevice.DTXMessageResult, err error) {
+
+	chanID, err := i.requestChannel(channel)
+	if err != nil {
+		return nil, err
+	}
+
+	args := libimobiledevice.NewAuxBuffer()
+	for _, aux := range auxiliaries {
+		if err = args.AppendObject(aux); err != nil {
+			return nil, err
+		}
+	}
+
+	return i.client.Invoke(selector, args, chanID, true)
+}
+
 func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid int, err error) {
 	opt := new(appLaunchOption)
 	opt.appPath = ""

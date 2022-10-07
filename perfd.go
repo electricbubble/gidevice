@@ -122,7 +122,15 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 		c.cancels = append(c.cancels, cancel)
 	}
 
-	if c.option.gpu || c.option.fps {
+	if c.option.fps {
+		cancel, err := c.startGetFPS(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		c.cancels = append(c.cancels, cancel)
+	}
+
+	if c.option.gpu {
 		cancel, err := c.registerGraphicsOpengl(context.Background())
 		if err != nil {
 			return nil, err
@@ -264,6 +272,75 @@ type NetworkData struct {
 	TxBytes   int64  `json:"tx_bytes"`
 	TxPackets int64  `json:"tx_packets"`
 	Msg       string `json:"msg,omitempty"` // message for invalid data
+}
+
+func (c *perfdClient) startGetFPS(ctx context.Context) (
+	cancel context.CancelFunc, err error) {
+
+	if _, err = c.i.call(
+		instrumentsServiceGraphicsOpengl,
+		"setSamplingRate:",
+		float64(1000)/100, // TODO: make it configurable
+	); err != nil {
+		return nil, err
+	}
+
+	if _, err = c.i.call(
+		instrumentsServiceGraphicsOpengl,
+		"startSamplingAtTimeInterval:",
+		0,
+	); err != nil {
+		return nil, err
+	}
+
+	ctx, cancel = context.WithCancel(ctx)
+	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			c.parseFPS(m.Obj)
+		}
+	})
+
+	return
+}
+
+func (c *perfdClient) parseFPS(data interface{}) {
+	// data example:
+	// map[
+	//   Alloc system memory:50167808
+	//   Allocated PB Size:1179648
+	//   CoreAnimationFramesPerSecond:0  // fps from GPU
+	//   Device Utilization %:0
+	//   IOGLBundleName:Built-In
+	//   In use system memory:10633216
+	//   Renderer Utilization %:0
+	//   SplitSceneCount:0
+	//   TiledSceneBytes:0
+	//   Tiler Utilization %:0
+	//   XRVideoCardRunTimeStamp:1010679
+	//   recoveryCount:0
+	// ]
+
+	fpsInfo := FPSData{
+		Type:      "fps",
+		TimeStamp: time.Now().Unix(),
+	}
+
+	defer func() {
+		fpsBytes, _ := json.Marshal(fpsInfo)
+		c.chanFPS <- fpsBytes
+	}()
+
+	raw, ok := data.(map[string]interface{})
+	if !ok {
+		fpsInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
+		return
+	}
+
+	// fps
+	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
 }
 
 func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
