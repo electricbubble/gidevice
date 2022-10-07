@@ -14,6 +14,7 @@ func TestPerfSystemMonitor(t *testing.T) {
 		WithPerfSystemMem(true),
 		WithPerfSystemDisk(true),
 		WithPerfSystemNetwork(true),
+		WithPerfOutputInterval(1000),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -24,17 +24,20 @@ type perfOption struct {
 	// process
 	bundleID string
 	pid      string
+	// config
+	outputInterval int // ms
 }
 
 func defaulPerfOption() *perfOption {
 	return &perfOption{
-		sysCPU:     true, // default on
-		sysMem:     true, // default on
-		sysDisk:    false,
-		sysNetwork: false,
-		gpu:        false,
-		fps:        false,
-		network:    false,
+		sysCPU:         true, // default on
+		sysMem:         true, // default on
+		sysDisk:        false,
+		sysNetwork:     false,
+		gpu:            false,
+		fps:            false,
+		network:        false,
+		outputInterval: 1000, // default 1000ms
 	}
 }
 
@@ -91,6 +94,12 @@ func WithPerfFPS(b bool) PerfOption {
 func WithPerfNetwork(b bool) PerfOption {
 	return func(opt *perfOption) {
 		opt.network = b
+	}
+}
+
+func WithPerfOutputInterval(intervalMilliseconds int) PerfOption {
+	return func(opt *perfOption) {
+		opt.outputInterval = intervalMilliseconds
 	}
 }
 
@@ -406,7 +415,7 @@ func (c *perfdClient) startGetFPS(ctx context.Context) (
 	if _, err = c.i.call(
 		instrumentsServiceGraphicsOpengl,
 		"setSamplingRate:",
-		float64(1000)/100, // TODO: make it configurable
+		float64(c.option.outputInterval)/100,
 	); err != nil {
 		return nil, err
 	}
@@ -478,7 +487,7 @@ func (c *perfdClient) startGetGPU(ctx context.Context) (
 	if _, err = c.i.call(
 		instrumentsServiceGraphicsOpengl,
 		"setSamplingRate:",
-		float64(1000)/100, // TODO: make it configurable
+		float64(c.option.outputInterval)/100,
 	); err != nil {
 		return nil, err
 	}
@@ -588,8 +597,8 @@ func (c *perfdClient) registerSystemMonitor(ctx context.Context) (
 	config := map[string]interface{}{
 		"bm":             0,
 		"cpuUsage":       true,
-		"sampleInterval": time.Second * 1, // 1s
-		"ur":             1000,            // 刷新频率
+		"sampleInterval": time.Second * 1,         // 1s
+		"ur":             c.option.outputInterval, // 输出频率
 		"procAttrs": []string{
 			"name",
 			"pid",
