@@ -2,8 +2,10 @@ package giDevice
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -131,7 +133,7 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	}
 
 	if c.option.gpu {
-		cancel, err := c.registerGraphicsOpengl(context.Background())
+		cancel, err := c.startGetGPU(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -193,14 +195,17 @@ func (c *perfdClient) Stop() {
 func (c *perfdClient) registerNetworking(ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
-	chanID, err := c.i.requestChannel(instrumentsServiceNetworking)
-	if err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceNetworking,
+		"replayLastRecordedSession",
+	); err != nil {
 		return nil, err
 	}
 
-	selector := "startMonitoring"
-	args := libimobiledevice.NewAuxBuffer()
-	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceNetworking,
+		"startMonitoring",
+	); err != nil {
 		return nil, err
 	}
 
@@ -218,60 +223,154 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 }
 
 func (c *perfdClient) parseNetworking(data interface{}) {
-	// data example (3 types):
-	// [
-	//   2          // type
-	//   [
-	//     36756    // RxBytes
-	//     11180213 // RxPackets
-	//     32837    // TxBytes
-	//     8365982  // TxPackets
-	//     map[$class:9] map[$class:9] map[$class:9] map[$class:9] map[$class:9] 144 -1]
-	// ]
-	// [2 [205 435704 0 0 0 0 0 0.005 0.005 95 166]]
-	// [1 [[16 2 197 19 192 168 100 103 0 0 0 0 0 0 0 0] [16 2 1 187 117 174 183 75 0 0 0 0 0 0 0 0] 14 -2 262144 0 21 1]]
-
-	netData := NetworkData{
-		Type:      "network",
-		TimeStamp: time.Now().Unix(),
-	}
-
-	defer func() {
-		netBytes, _ := json.Marshal(netData)
-		c.chanNetwork <- netBytes
-	}()
-
 	raw, ok := data.([]interface{})
 	if !ok || len(raw) != 2 {
-		netData.Msg = fmt.Sprintf("invalid networking data: %v", data)
-		return
-	}
-	if raw[0].(uint64) == 1 {
-		// TODO
-		netData.Msg = fmt.Sprintf("unhandled networking data: %v", data)
+		fmt.Printf("invalid networking data: %v\n", data)
 		return
 	}
 
-	rtxData, ok := raw[1].([]interface{})
-	if !ok {
-		netData.Msg = fmt.Sprintf("unexpected networking data: %v", data)
-		return
-	}
+	var netBytes []byte
+	msgType := raw[0].(uint64)
+	msgValue := raw[1].([]interface{})
+	if msgType == 0 {
+		// interface-detection
+		// ['InterfaceIndex', "Name"]
+		// e.g. [0, [14, 'en0']]
+		netData := NetworkDataInterfaceDetection{
+			NetworkData: NetworkData{
+				Type:      "network-interface-detection",
+				TimeStamp: time.Now().Unix(),
+			},
+			InterfaceIndex: convert2Int64(msgValue[0]),
+			Name:           msgValue[1].(string),
+		}
+		netBytes, _ = json.Marshal(netData)
+	} else if msgType == 1 {
+		// connection-detected
+		// ['LocalAddress', 'RemoteAddress', 'InterfaceIndex', 'Pid',
+		// 'RecvBufferSize', 'RecvBufferUsed', 'SerialNumber', 'Kind']
+		// e.g. [1 [[16 2 211 158 192 168 100 101 0 0 0 0 0 0 0 0]
+		//       [16 2 0 53 183 221 253 100 0 0 0 0 0 0 0 0]
+		//       14 -2 786896 0 133 2]]
 
-	netData.RxBytes = convert2Int64(rtxData[0])
-	netData.RxPackets = convert2Int64(rtxData[1])
-	netData.TxBytes = convert2Int64(rtxData[2])
-	netData.TxPackets = convert2Int64(rtxData[3])
+		localAddr, err := parseSocketAddr(msgValue[0].([]byte))
+		if err != nil {
+			fmt.Printf("parse local socket address err: %v\n", err)
+		}
+		remoteAddr, err := parseSocketAddr(msgValue[1].([]byte))
+		if err != nil {
+			fmt.Printf("parse remote socket address err: %v\n", err)
+		}
+		netData := NetworkDataConnectionDetected{
+			NetworkData: NetworkData{
+				Type:      "network-connection-detected",
+				TimeStamp: time.Now().Unix(),
+			},
+			LocalAddress:   localAddr,
+			RemoteAddress:  remoteAddr,
+			InterfaceIndex: convert2Int64(msgValue[2]),
+			Pid:            convert2Int64(msgValue[3]),
+			RecvBufferSize: convert2Int64(msgValue[4]),
+			RecvBufferUsed: convert2Int64(msgValue[5]),
+			SerialNumber:   convert2Int64(msgValue[6]),
+			Kind:           convert2Int64(msgValue[7]),
+		}
+		netBytes, _ = json.Marshal(netData)
+	} else if msgType == 2 {
+		// connection-update
+		// ['RxPackets', 'RxBytes', 'TxPackets', 'TxBytes',
+		// 'RxDups', 'RxOOO', 'TxRetx', 'MinRTT', 'AvgRTT', 'ConnectionSerial']
+		// e.g. [2, [21, 1708, 22, 14119, 309, 0, 5830, 0.076125, 0.076125, 54, -1]]
+		netData := NetworkDataConnectionUpdate{
+			NetworkData: NetworkData{
+				Type:      "network-connection-update",
+				TimeStamp: time.Now().Unix(),
+			},
+			RxBytes:   convert2Int64(msgValue[0]),
+			RxPackets: convert2Int64(msgValue[1]),
+			TxBytes:   convert2Int64(msgValue[2]),
+			TxPackets: convert2Int64(msgValue[3]),
+		}
+		if value, ok := msgValue[4].(uint64); ok {
+			netData.RxDups = int64(value)
+		}
+		if value, ok := msgValue[5].(uint64); ok {
+			netData.RxOOO = int64(value)
+		}
+		if value, ok := msgValue[6].(uint64); ok {
+			netData.TxRetx = int64(value)
+		}
+		if value, ok := msgValue[7].(uint64); ok {
+			netData.MinRTT = int64(value)
+		}
+		if value, ok := msgValue[8].(uint64); ok {
+			netData.AvgRTT = int64(value)
+		}
+		if value, ok := msgValue[9].(uint64); ok {
+			netData.ConnectionSerial = int64(value)
+		}
+
+		netBytes, _ = json.Marshal(netData)
+	}
+	c.chanNetwork <- netBytes
+}
+
+func parseSocketAddr(data []byte) (string, error) {
+	len := data[0]                             // length of address
+	_ = data[1]                                // family
+	port := binary.BigEndian.Uint16(data[2:4]) // port
+
+	// network, data[4:4+len]
+	if len == 0x10 {
+		// IPv4, 4 bytes
+		ip := net.IP(data[4:8])
+		return fmt.Sprintf("%s:%d", ip, port), nil
+	} else if len == 0x1c {
+		// IPv6, 16 bytes
+		ip := net.IP(data[4:20])
+		return fmt.Sprintf("%s:%d", ip, port), nil
+	}
+	return "", fmt.Errorf("invalid socket address: %v", data)
 }
 
 type NetworkData struct {
 	Type      string `json:"type"` // network
 	TimeStamp int64  `json:"timestamp"`
-	RxBytes   int64  `json:"rx_bytes"`
-	RxPackets int64  `json:"rx_packets"`
-	TxBytes   int64  `json:"tx_bytes"`
-	TxPackets int64  `json:"tx_packets"`
-	Msg       string `json:"msg,omitempty"` // message for invalid data
+}
+
+// network-interface-detection
+type NetworkDataInterfaceDetection struct {
+	NetworkData
+	InterfaceIndex int64  `json:"interface_index"` // 0
+	Name           string `json:"name"`            // 1
+}
+
+// network-connection-detected
+type NetworkDataConnectionDetected struct {
+	NetworkData
+	LocalAddress   string `json:"local_address"`    // 0
+	RemoteAddress  string `json:"remote_address"`   // 1
+	InterfaceIndex int64  `json:"interface_index"`  // 2
+	Pid            int64  `json:"pid"`              // 3
+	RecvBufferSize int64  `json:"recv_buffer_size"` // 4
+	RecvBufferUsed int64  `json:"recv_buffer_used"` // 5
+	SerialNumber   int64  `json:"serial_number"`    // 6
+	Kind           int64  `json:"kind"`             // 7
+}
+
+// network-connection-update
+type NetworkDataConnectionUpdate struct {
+	NetworkData
+	RxBytes          int64 `json:"rx_bytes"`          // 0
+	RxPackets        int64 `json:"rx_packets"`        // 1
+	TxBytes          int64 `json:"tx_bytes"`          // 2
+	TxPackets        int64 `json:"tx_packets"`        // 3
+	RxDups           int64 `json:"rx_dups,omitempty"` // 4
+	RxOOO            int64 `json:"rx_000,omitempty"`  // 5
+	TxRetx           int64 `json:"tx_retx,omitempty"` // 6
+	MinRTT           int64 `json:"min_rtt,omitempty"` // 7
+	AvgRTT           int64 `json:"avg_rtt,omitempty"` // 8
+	ConnectionSerial int64 `json:"connection_serial"` // 9
 }
 
 func (c *perfdClient) startGetFPS(ctx context.Context) (
@@ -343,37 +442,22 @@ func (c *perfdClient) parseFPS(data interface{}) {
 	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
 }
 
-func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
+func (c *perfdClient) startGetGPU(ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
-	chanID, err := c.i.requestChannel(instrumentsServiceGraphicsOpengl)
-	if err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceGraphicsOpengl,
+		"setSamplingRate:",
+		float64(1000)/100, // TODO: make it configurable
+	); err != nil {
 		return nil, err
 	}
 
-	selector := "availableStatistics"
-	args := libimobiledevice.NewAuxBuffer()
-	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
-		return nil, err
-	}
-
-	selector = "setSamplingRate:"
-	if err = args.AppendObject(0.0); err != nil {
-		return nil, err
-	}
-	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
-		return nil, err
-	}
-
-	selector = "startSamplingAtTimeInterval:processIdentifier:"
-	args = libimobiledevice.NewAuxBuffer()
-	if err = args.AppendObject(0); err != nil {
-		return nil, err
-	}
-	if err = args.AppendObject(0); err != nil {
-		return nil, err
-	}
-	if _, err = c.i.client.Invoke(selector, args, chanID, true); err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceGraphicsOpengl,
+		"startSamplingAtTimeInterval:",
+		0,
+	); err != nil {
 		return nil, err
 	}
 
@@ -383,19 +467,19 @@ func (c *perfdClient) registerGraphicsOpengl(ctx context.Context) (
 		case <-ctx.Done():
 			return
 		default:
-			c.parseGpuFps(m.Obj)
+			c.parseGPU(m.Obj)
 		}
 	})
 
 	return
 }
 
-func (c *perfdClient) parseGpuFps(data interface{}) {
+func (c *perfdClient) parseGPU(data interface{}) {
 	// data example:
 	// map[
 	//   Alloc system memory:50167808
 	//   Allocated PB Size:1179648
-	//   CoreAnimationFramesPerSecond:0  // fps from GPU
+	//   CoreAnimationFramesPerSecond:0
 	//   Device Utilization %:0          // device
 	//   IOGLBundleName:Built-In
 	//   In use system memory:10633216
@@ -407,31 +491,19 @@ func (c *perfdClient) parseGpuFps(data interface{}) {
 	//   recoveryCount:0
 	// ]
 
-	timestamp := time.Now().Unix()
 	gpuInfo := GPUData{
 		Type:      "gpu",
-		TimeStamp: timestamp,
-	}
-	fpsInfo := FPSData{
-		Type:      "fps",
-		TimeStamp: timestamp,
+		TimeStamp: time.Now().Unix(),
 	}
 
 	defer func() {
-		if c.option.gpu {
-			gpuBytes, _ := json.Marshal(gpuInfo)
-			c.chanGPU <- gpuBytes
-		}
-		if c.option.fps {
-			fpsBytes, _ := json.Marshal(fpsInfo)
-			c.chanFPS <- fpsBytes
-		}
+		gpuBytes, _ := json.Marshal(gpuInfo)
+		c.chanGPU <- gpuBytes
 	}()
 
 	raw, ok := data.(map[string]interface{})
 	if !ok {
 		gpuInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
-		fpsInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
 		return
 	}
 
@@ -439,9 +511,6 @@ func (c *perfdClient) parseGpuFps(data interface{}) {
 	gpuInfo.DeviceUtilization = convert2Int64(raw["Device Utilization %"])
 	gpuInfo.TilerUtilization = convert2Int64(raw["Tiler Utilization %"])
 	gpuInfo.RendererUtilization = convert2Int64(raw["Renderer Utilization %"])
-
-	// fps
-	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
 }
 
 type GPUData struct {
@@ -682,6 +751,8 @@ func convertProcessData(procData interface{}) map[string]interface{} {
 
 func convert2Int64(num interface{}) int64 {
 	switch value := num.(type) {
+	case int64:
+		return value
 	case uint64:
 		return int64(value)
 	case uint32:
