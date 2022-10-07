@@ -1,17 +1,19 @@
 package giDevice
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
 
-func TestPerfCPUMem(t *testing.T) {
+func TestPerfSystemMonitor(t *testing.T) {
 	setupLockdownSrv(t)
 
 	data, err := dev.PerfStart(
-		WithPerfCPU(true),
-		WithPerfMem(true),
-		WithPerfBundleID("com.apple.mobilesafari"),
+		WithPerfSystemCPU(true),
+		WithPerfSystemMem(true),
+		WithPerfSystemDisk(true),
+		WithPerfSystemNetwork(true),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +26,7 @@ func TestPerfCPUMem(t *testing.T) {
 			dev.PerfStop()
 			return
 		case d := <-data:
-			t.Log(string(d))
+			fmt.Println(string(d))
 		}
 	}
 }
@@ -33,8 +35,8 @@ func TestPerfGPU(t *testing.T) {
 	setupLockdownSrv(t)
 
 	data, err := dev.PerfStart(
-		WithPerfCPU(false),
-		WithPerfMem(false),
+		WithPerfSystemCPU(false),
+		WithPerfSystemMem(false),
 		WithPerfGPU(true),
 	)
 	if err != nil {
@@ -48,7 +50,7 @@ func TestPerfGPU(t *testing.T) {
 			dev.PerfStop()
 			return
 		case d := <-data:
-			t.Log(string(d))
+			fmt.Println(string(d))
 		}
 	}
 }
@@ -57,8 +59,8 @@ func TestPerfFPS(t *testing.T) {
 	setupLockdownSrv(t)
 
 	data, err := dev.PerfStart(
-		WithPerfCPU(false),
-		WithPerfMem(false),
+		WithPerfSystemCPU(false),
+		WithPerfSystemMem(false),
 		WithPerfFPS(true),
 	)
 	if err != nil {
@@ -72,7 +74,7 @@ func TestPerfFPS(t *testing.T) {
 			dev.PerfStop()
 			return
 		case d := <-data:
-			t.Log(string(d))
+			fmt.Println(string(d))
 		}
 	}
 }
@@ -81,8 +83,8 @@ func TestPerfNetwork(t *testing.T) {
 	setupLockdownSrv(t)
 
 	data, err := dev.PerfStart(
-		WithPerfCPU(false),
-		WithPerfMem(false),
+		WithPerfSystemCPU(false),
+		WithPerfSystemMem(false),
 		WithPerfNetwork(true),
 	)
 	if err != nil {
@@ -96,7 +98,7 @@ func TestPerfNetwork(t *testing.T) {
 			dev.PerfStop()
 			return
 		case d := <-data:
-			t.Log(string(d))
+			fmt.Println(string(d))
 		}
 	}
 }

@@ -13,26 +13,56 @@ import (
 )
 
 type perfOption struct {
+	// system
+	sysCPU     bool
+	sysMem     bool
+	sysDisk    bool
+	sysNetwork bool
+	gpu        bool
+	fps        bool
+	network    bool
+	// process
 	bundleID string
 	pid      string
-	gpu      bool
-	cpu      bool
-	mem      bool
-	fps      bool
-	network  bool
 }
 
 func defaulPerfOption() *perfOption {
 	return &perfOption{
-		gpu:     false,
-		cpu:     true, // default on
-		mem:     true, // default on
-		fps:     false,
-		network: false,
+		sysCPU:     true, // default on
+		sysMem:     true, // default on
+		sysDisk:    false,
+		sysNetwork: false,
+		gpu:        false,
+		fps:        false,
+		network:    false,
 	}
 }
 
 type PerfOption func(*perfOption)
+
+func WithPerfSystemCPU(b bool) PerfOption {
+	return func(opt *perfOption) {
+		opt.sysCPU = b
+	}
+}
+
+func WithPerfSystemMem(b bool) PerfOption {
+	return func(opt *perfOption) {
+		opt.sysMem = b
+	}
+}
+
+func WithPerfSystemDisk(b bool) PerfOption {
+	return func(opt *perfOption) {
+		opt.sysDisk = b
+	}
+}
+
+func WithPerfSystemNetwork(b bool) PerfOption {
+	return func(opt *perfOption) {
+		opt.sysNetwork = b
+	}
+}
 
 func WithPerfBundleID(bundleID string) PerfOption {
 	return func(opt *perfOption) {
@@ -52,18 +82,6 @@ func WithPerfGPU(b bool) PerfOption {
 	}
 }
 
-func WithPerfCPU(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.cpu = b
-	}
-}
-
-func WithPerfMem(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.mem = b
-	}
-}
-
 func WithPerfFPS(b bool) PerfOption {
 	return func(opt *perfOption) {
 		opt.fps = b
@@ -77,15 +95,17 @@ func WithPerfNetwork(b bool) PerfOption {
 }
 
 type perfdClient struct {
-	option      *perfOption
-	i           *instruments
-	stop        chan struct{}        // used to stop perf client
-	cancels     []context.CancelFunc // used to cancel all iterators
-	chanCPU     chan []byte          // cpu channel
-	chanMem     chan []byte          // mem channel
-	chanGPU     chan []byte          // gpu channel
-	chanFPS     chan []byte          // fps channel
-	chanNetwork chan []byte          // network channel
+	option         *perfOption
+	i              *instruments
+	stop           chan struct{}        // used to stop perf client
+	cancels        []context.CancelFunc // used to cancel all iterators
+	chanSysCPU     chan []byte          // system cpu channel
+	chanSysMem     chan []byte          // system mem channel
+	chanSysDisk    chan []byte          // system disk channel
+	chanSysNetwork chan []byte          // system network channel
+	chanGPU        chan []byte          // gpu channel
+	chanFPS        chan []byte          // fps channel
+	chanNetwork    chan []byte          // network channel
 }
 
 func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient {
@@ -102,22 +122,24 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 	}
 
 	return &perfdClient{
-		i:           i.(*instruments),
-		option:      perfOption,
-		stop:        make(chan struct{}),
-		chanCPU:     make(chan []byte, 10),
-		chanMem:     make(chan []byte, 10),
-		chanGPU:     make(chan []byte, 10),
-		chanFPS:     make(chan []byte, 10),
-		chanNetwork: make(chan []byte, 10),
+		i:              i.(*instruments),
+		option:         perfOption,
+		stop:           make(chan struct{}),
+		chanSysCPU:     make(chan []byte, 10),
+		chanSysMem:     make(chan []byte, 10),
+		chanSysDisk:    make(chan []byte, 10),
+		chanSysNetwork: make(chan []byte, 10),
+		chanGPU:        make(chan []byte, 10),
+		chanFPS:        make(chan []byte, 10),
+		chanNetwork:    make(chan []byte, 10),
 	}
 }
 
 func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
-	if c.option.cpu || c.option.mem {
-		cancel, err := c.registerSysmontap(c.option.pid, context.Background())
+	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk || c.option.sysNetwork {
+		cancel, err := c.registerSystemMonitor(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -153,29 +175,32 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 			select {
 			case <-c.stop:
 				return
-			case cpuBytes, ok := <-c.chanCPU:
+			case cpuBytes, ok := <-c.chanSysCPU:
 				if ok {
-					fmt.Println("cpu: ", string(cpuBytes))
 					outCh <- cpuBytes
 				}
-			case memBytes, ok := <-c.chanMem:
+			case memBytes, ok := <-c.chanSysMem:
 				if ok {
-					fmt.Println("mem: ", string(memBytes))
 					outCh <- memBytes
+				}
+			case diskBytes, ok := <-c.chanSysDisk:
+				if ok {
+					outCh <- diskBytes
+				}
+			case networkBytes, ok := <-c.chanSysNetwork:
+				if ok {
+					outCh <- networkBytes
 				}
 			case gpuBytes, ok := <-c.chanGPU:
 				if ok {
-					fmt.Println("gpu: ", string(gpuBytes))
 					outCh <- gpuBytes
 				}
 			case fpsBytes, ok := <-c.chanFPS:
 				if ok {
-					fmt.Println("fps: ", string(fpsBytes))
 					outCh <- fpsBytes
 				}
 			case networkBytes, ok := <-c.chanNetwork:
 				if ok {
-					fmt.Println("network: ", string(networkBytes))
 					outCh <- networkBytes
 				}
 			}
@@ -533,7 +558,30 @@ type FPSData struct {
 	FPS          int `json:"fps"`
 }
 
-func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
+var systemAttributes = []string{
+	"threadCount",
+	// disk
+	"diskBytesRead",
+	"diskBytesWritten",
+	"diskReadOps",
+	"diskWriteOps",
+	// memory
+	"vmCompressorPageCount",
+	"vmExtPageCount",
+	"vmFreeCount",
+	"vmIntPageCount",
+	"vmPurgeableCount",
+	"vmWireCount",
+	"vmUsedCount",
+	"__vmSwapUsage",
+	// network
+	"netBytesIn",
+	"netBytesOut",
+	"netPacketsIn",
+	"netPacketsOut",
+}
+
+func (c *perfdClient) registerSystemMonitor(ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
 	// set config
@@ -543,22 +591,10 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 		"sampleInterval": time.Second * 1, // 1s
 		"ur":             1000,            // 刷新频率
 		"procAttrs": []string{
-			"memVirtualSize", // vss
-			"cpuUsage",
-			"ctxSwitch",       // the number of context switches by process each second
-			"intWakeups",      // the number of threads wakeups by process each second
-			"physFootprint",   // real memory (物理内存)
-			"memResidentSize", // rss
-			"memAnon",         // anonymous memory
+			"name",
 			"pid",
 		},
-		"sysAttrs": []string{ // 系统信息字段
-			"vmExtPageCount",
-			"vmFreeCount",
-			"vmPurgeableCount",
-			"vmSpeculativeCount",
-			"physMemSize",
-		},
+		"sysAttrs": systemAttributes, // system performance
 	}
 	if _, err = c.i.call(
 		instrumentsServiceSysmontap,
@@ -584,173 +620,172 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 			c.i.call(instrumentsServiceSysmontap, "stop")
 			return
 		default:
-			c.parseSysmontap(m.Obj, pid)
+			c.parseSystemMonitor(m.Obj)
 		}
 	})
 
 	return cancel, err
 }
 
-func (c *perfdClient) parseSysmontap(data interface{}, pid string) {
+func (c *perfdClient) parseSystemMonitor(data interface{}) {
+	dataArray, ok := data.([]interface{})
+	if !ok || len(dataArray) != 2 {
+		return
+	}
+
 	timestamp := time.Now().Unix()
-	cpuInfo := CPUData{
-		PerfDataBase: PerfDataBase{
-			Type:      "cpu",
-			TimeStamp: timestamp,
-		},
-		ProcPID: pid,
-	}
-	memInfo := MemData{
-		PerfDataBase: PerfDataBase{
-			Type:      "mem",
-			TimeStamp: timestamp,
-		},
-		ProcPID: pid,
+	var systemInfo map[string]interface{}
+	data1 := dataArray[0].(map[string]interface{})
+	data2 := dataArray[1].(map[string]interface{})
+	if _, ok := data1["SystemCPUUsage"]; ok {
+		systemInfo = data1
+	} else {
+		systemInfo = data2
 	}
 
-	defer func() {
-		if c.option.cpu {
-			cpuBytes, _ := json.Marshal(cpuInfo)
-			c.chanCPU <- cpuBytes
-		}
-		if c.option.mem {
-			memBytes, _ := json.Marshal(memInfo)
-			c.chanMem <- memBytes
-		}
-	}()
-
-	messArray, ok := data.([]interface{})
-	if !ok || len(messArray) != 2 {
-		cpuInfo.Msg = fmt.Sprintf("invalid sysmontap data: %v", data)
-		memInfo.Msg = fmt.Sprintf("invalid sysmontap data: %v", data)
-		return
-	}
-
-	var systemInfo = messArray[0].(map[string]interface{})
-	var processInfoList = messArray[1].(map[string]interface{})
-	if systemInfo["CPUCount"] == nil {
-		systemInfo, processInfoList = processInfoList, systemInfo
-	}
-	if systemInfo["CPUCount"] == nil {
-		cpuInfo.Msg = fmt.Sprintf("invalid system info: %v", systemInfo)
-		return
-	}
 	// systemInfo example:
 	// map[
 	//   CPUCount:2
 	//   EnabledCPUs:2
 	//   PerCPUUsage:[
-	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:4.587155963302749 CPU_UserLoad:-1]
-	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:0.9174311926605441 CPU_UserLoad:-1]
+	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.9215686274509807 CPU_UserLoad:-1]
+	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:11.650485436893206 CPU_UserLoad:-1]]
 	//   ]
-	//   System:[70117 2850 465 1579 128643]
+	//   System:[704211 35486281728 6303789056 3001119 1001 11033 52668 1740 40022 2114 17310 126903 1835008 160323 107909856 95067 95808179]
 	//   SystemCPUUsage:map[
 	//     CPU_NiceLoad:0
 	//     CPU_SystemLoad:-1
-	//     CPU_TotalLoad:5.504587155963293
+	//     CPU_TotalLoad:15.572054064344186
 	//     CPU_UserLoad:-1
 	//   ]
-	//   StartMachAbsTime:2514085834016
-	//   EndMachAbsTime:2514111855034
+	//   StartMachAbsTime:5339240248449
+	//   EndMachAbsTime:5339264441260
 	//   Type:41
 	// ]
-	var cpuCount = systemInfo["CPUCount"]
-	var sysCpuUsage = systemInfo["SystemCPUUsage"].(map[string]interface{})
 
-	if processInfoList["Processes"] == nil {
-		cpuInfo.Msg = fmt.Sprintf("invalid process info list: %v", processInfoList)
-		memInfo.Msg = fmt.Sprintf("invalid process info list: %v", processInfoList)
-		return
+	if c.option.sysCPU {
+		sysCPUUsage := systemInfo["SystemCPUUsage"].(map[string]interface{})
+		sysCPUInfo := SystemCPUData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_cpu",
+				TimeStamp: timestamp,
+			},
+			NiceLoad:   sysCPUUsage["CPU_NiceLoad"].(float64),
+			SystemLoad: sysCPUUsage["CPU_SystemLoad"].(float64),
+			TotalLoad:  sysCPUUsage["CPU_TotalLoad"].(float64),
+			UserLoad:   sysCPUUsage["CPU_UserLoad"].(float64),
+		}
+		cpuBytes, _ := json.Marshal(sysCPUInfo)
+		c.chanSysCPU <- cpuBytes
 	}
-	// processInfoList example:
-	// map[
-	//   Processes:map[
-	//     0:[108940918784 0.35006396059439243 11867680 6069179 147456 294600704 167346176 0]
-	//     100:[417741438976 0 65418 21019 1819088 7045120 1671168 100]
-	//     107:[417746960384 0.06996075980775063 71187 21226 3342800 9420800 3178496 107]
-	//   ]
-	// 	 StartMachAbsTime:2514086593642
-	//   EndMachAbsTime:2514112708690
-	//   Type:5
-	// ]
 
-	// cpu
-	cpuInfo.CPUCount = int(cpuCount.(uint64))
-	cpuInfo.SysCPUUsageTotalLoad = sysCpuUsage["CPU_TotalLoad"].(float64)
+	systemAttributesValue := systemInfo["System"].([]interface{})
+	systemAttributesMap := make(map[string]int64)
+	for idx, value := range systemAttributes {
+		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
+	}
 
-	processes := processInfoList["Processes"].(map[string]interface{})
-	procData, ok := processes[pid]
-	processInfo := convertProcessData(procData)
-	if ok && processInfo != nil {
-		// cpu
-		cpuInfo.ProcCPUUsage = processInfo["cpuUsage"].(float64)
-		cpuInfo.ProcAttrCtxSwitch = convert2Int64(processInfo["ctxSwitch"])
-		cpuInfo.ProcAttrIntWakeups = convert2Int64(processInfo["intWakeups"])
-		// mem
-		memInfo.Vss = convert2Int64(processInfo["memVirtualSize"])
-		memInfo.Rss = convert2Int64(processInfo["memResidentSize"])
-		memInfo.Anon = convert2Int64(processInfo["memAnon"])
-		memInfo.PhysMemory = convert2Int64(processInfo["physFootprint"])
-	} else {
-		// cpu
-		cpuInfo.Msg = fmt.Sprintf("pid %s not found", pid)
-		// mem
-		memInfo.Msg = fmt.Sprintf("pid %s not found", pid)
-		memInfo.Vss = -1
-		memInfo.Rss = -1
-		memInfo.Anon = -1
-		memInfo.PhysMemory = -1
+	if c.option.sysMem {
+		kernelPageSize := int64(1) // why 16384 ?
+		appMemory := (systemAttributesMap["vmIntPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
+		cachedFiles := (systemAttributesMap["vmExtPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
+		compressed := systemAttributesMap["vmCompressorPageCount"] * kernelPageSize
+		usedMemory := (systemAttributesMap["vmUsedCount"] - systemAttributesMap["vmExtPageCount"]) * kernelPageSize
+		wiredMemory := systemAttributesMap["vmWireCount"] * kernelPageSize
+		swapUsed := systemAttributesMap["__vmSwapUsage"]
+		freeMemory := systemAttributesMap["vmFreeCount"] * kernelPageSize
+
+		sysMemInfo := SystemMemData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_mem",
+				TimeStamp: timestamp,
+			},
+			AppMemory:   appMemory,
+			UsedMemory:  usedMemory,
+			WiredMemory: wiredMemory,
+			FreeMemory:  freeMemory,
+			CachedFiles: cachedFiles,
+			Compressed:  compressed,
+			SwapUsed:    swapUsed,
+		}
+		memBytes, _ := json.Marshal(sysMemInfo)
+		c.chanSysMem <- memBytes
+	}
+
+	if c.option.sysDisk {
+		diskBytesRead := systemAttributesMap["diskBytesRead"]
+		diskBytesWritten := systemAttributesMap["diskBytesWritten"]
+		diskReadOps := systemAttributesMap["diskReadOps"]
+		diskWriteOps := systemAttributesMap["diskWriteOps"]
+
+		sysDiskInfo := SystemDiskData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_disk",
+				TimeStamp: timestamp,
+			},
+			DataRead:    diskBytesRead,
+			DataWritten: diskBytesWritten,
+			ReadOps:     diskReadOps,
+			WriteOps:    diskWriteOps,
+		}
+		diskBytes, _ := json.Marshal(sysDiskInfo)
+		c.chanSysDisk <- diskBytes
+	}
+
+	if c.option.sysNetwork {
+		netBytesIn := systemAttributesMap["netBytesIn"]
+		netBytesOut := systemAttributesMap["netBytesOut"]
+		netPacketsIn := systemAttributesMap["netPacketsIn"]
+		netPacketsOut := systemAttributesMap["netPacketsOut"]
+
+		sysNetworkInfo := SystemNetworkData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_network",
+				TimeStamp: timestamp,
+			},
+			BytesIn:    netBytesIn,
+			BytesOut:   netBytesOut,
+			PacketsIn:  netPacketsIn,
+			PacketsOut: netPacketsOut,
+		}
+		networkBytes, _ := json.Marshal(sysNetworkInfo)
+		c.chanSysNetwork <- networkBytes
 	}
 }
 
-type CPUData struct {
-	PerfDataBase // cpu
-	// system
-	CPUCount             int     `json:"cpu_count"`     // CPU总数
-	SysCPUUsageTotalLoad float64 `json:"sys_cpu_usage"` // 系统总体CPU占用
-	// process
-	ProcPID            string  `json:"pid"`                             // 进程 PID
-	ProcCPUUsage       float64 `json:"proc_cpu_usage,omitempty"`        // 单个进程的CPU使用率
-	ProcAttrCtxSwitch  int64   `json:"proc_attr_ctx_switch,omitempty"`  // 上下文切换数
-	ProcAttrIntWakeups int64   `json:"proc_attr_int_wakeups,omitempty"` // 唤醒数
+type SystemCPUData struct {
+	PerfDataBase         // system cpu
+	NiceLoad     float64 `json:"nice_load"`
+	SystemLoad   float64 `json:"system_load"`
+	TotalLoad    float64 `json:"total_load"`
+	UserLoad     float64 `json:"user_load"`
 }
 
-type MemData struct {
-	PerfDataBase        // mem
-	Anon         int64  `json:"anon"`        // 虚拟内存
-	PhysMemory   int64  `json:"phys_memory"` // 物理内存
-	Rss          int64  `json:"rss"`         // 总内存
-	Vss          int64  `json:"vss"`         // 虚拟内存
-	ProcPID      string `json:"pid"`         // 进程 PID
+type SystemMemData struct {
+	PerfDataBase       // mem
+	AppMemory    int64 `json:"app_memory"`
+	FreeMemory   int64 `json:"free_memory"`
+	UsedMemory   int64 `json:"used_memory"`
+	WiredMemory  int64 `json:"wired_memory"`
+	CachedFiles  int64 `json:"cached_files"`
+	Compressed   int64 `json:"compressed"`
+	SwapUsed     int64 `json:"swap_used"`
 }
 
-func convertProcessData(procData interface{}) map[string]interface{} {
-	if procData == nil {
-		return nil
-	}
-	procDataArray, ok := procData.([]interface{})
-	if !ok {
-		return nil
-	}
-	if len(procDataArray) != 8 {
-		return nil
-	}
+type SystemDiskData struct {
+	PerfDataBase       // disk
+	DataRead     int64 `json:"data_read"`
+	DataWritten  int64 `json:"data_written"`
+	ReadOps      int64 `json:"reads_in"`
+	WriteOps     int64 `json:"writes_out"`
+}
 
-	// procDataArray example:
-	// [417741438976 0 65418 21019 1819088 7045120 1671168 100]
-	// corresponds to procAttrs:
-	// ["memVirtualSize", "cpuUsage", "ctxSwitch", "intWakeups",
-	// "physFootprint", "memResidentSize", "memAnon", "pid"]
-	return map[string]interface{}{
-		"memVirtualSize":  procDataArray[0],
-		"cpuUsage":        procDataArray[1],
-		"ctxSwitch":       procDataArray[2],
-		"intWakeups":      procDataArray[3],
-		"physFootprint":   procDataArray[4],
-		"memResidentSize": procDataArray[5],
-		"memAnon":         procDataArray[6],
-		"PID":             procDataArray[7],
-	}
+type SystemNetworkData struct {
+	PerfDataBase       // network
+	BytesIn      int64 `json:"bytes_in"`
+	BytesOut     int64 `json:"bytes_out"`
+	PacketsIn    int64 `json:"packets_in"`
+	PacketsOut   int64 `json:"packets_out"`
 }
 
 func convert2Int64(num interface{}) int64 {
