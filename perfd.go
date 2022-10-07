@@ -213,6 +213,7 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
+			c.i.call(instrumentsServiceNetworking, "stopMonitoring")
 			return
 		default:
 			c.parseNetworking(m.Obj)
@@ -237,7 +238,7 @@ func (c *perfdClient) parseNetworking(data interface{}) {
 		// ['InterfaceIndex', "Name"]
 		// e.g. [0, [14, 'en0']]
 		netData := NetworkDataInterfaceDetection{
-			NetworkData: NetworkData{
+			PerfDataBase: PerfDataBase{
 				Type:      "network-interface-detection",
 				TimeStamp: time.Now().Unix(),
 			},
@@ -262,7 +263,7 @@ func (c *perfdClient) parseNetworking(data interface{}) {
 			fmt.Printf("parse remote socket address err: %v\n", err)
 		}
 		netData := NetworkDataConnectionDetected{
-			NetworkData: NetworkData{
+			PerfDataBase: PerfDataBase{
 				Type:      "network-connection-detected",
 				TimeStamp: time.Now().Unix(),
 			},
@@ -282,7 +283,7 @@ func (c *perfdClient) parseNetworking(data interface{}) {
 		// 'RxDups', 'RxOOO', 'TxRetx', 'MinRTT', 'AvgRTT', 'ConnectionSerial']
 		// e.g. [2, [21, 1708, 22, 14119, 309, 0, 5830, 0.076125, 0.076125, 54, -1]]
 		netData := NetworkDataConnectionUpdate{
-			NetworkData: NetworkData{
+			PerfDataBase: PerfDataBase{
 				Type:      "network-connection-update",
 				TimeStamp: time.Now().Unix(),
 			},
@@ -333,21 +334,22 @@ func parseSocketAddr(data []byte) (string, error) {
 	return "", fmt.Errorf("invalid socket address: %v", data)
 }
 
-type NetworkData struct {
-	Type      string `json:"type"` // network
+type PerfDataBase struct {
+	Type      string `json:"type"`
 	TimeStamp int64  `json:"timestamp"`
+	Msg       string `json:"msg,omitempty"` // message for invalid data
 }
 
 // network-interface-detection
 type NetworkDataInterfaceDetection struct {
-	NetworkData
+	PerfDataBase
 	InterfaceIndex int64  `json:"interface_index"` // 0
 	Name           string `json:"name"`            // 1
 }
 
 // network-connection-detected
 type NetworkDataConnectionDetected struct {
-	NetworkData
+	PerfDataBase
 	LocalAddress   string `json:"local_address"`    // 0
 	RemoteAddress  string `json:"remote_address"`   // 1
 	InterfaceIndex int64  `json:"interface_index"`  // 2
@@ -360,7 +362,7 @@ type NetworkDataConnectionDetected struct {
 
 // network-connection-update
 type NetworkDataConnectionUpdate struct {
-	NetworkData
+	PerfDataBase
 	RxBytes          int64 `json:"rx_bytes"`          // 0
 	RxPackets        int64 `json:"rx_packets"`        // 1
 	TxBytes          int64 `json:"tx_bytes"`          // 2
@@ -396,6 +398,7 @@ func (c *perfdClient) startGetFPS(ctx context.Context) (
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
+			c.i.call(instrumentsServiceGraphicsOpengl, "stopSampling")
 			return
 		default:
 			c.parseFPS(m.Obj)
@@ -423,8 +426,10 @@ func (c *perfdClient) parseFPS(data interface{}) {
 	// ]
 
 	fpsInfo := FPSData{
-		Type:      "fps",
-		TimeStamp: time.Now().Unix(),
+		PerfDataBase: PerfDataBase{
+			Type:      "fps",
+			TimeStamp: time.Now().Unix(),
+		},
 	}
 
 	defer func() {
@@ -465,6 +470,7 @@ func (c *perfdClient) startGetGPU(ctx context.Context) (
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
+			c.i.call(instrumentsServiceGraphicsOpengl, "stopSampling")
 			return
 		default:
 			c.parseGPU(m.Obj)
@@ -492,8 +498,10 @@ func (c *perfdClient) parseGPU(data interface{}) {
 	// ]
 
 	gpuInfo := GPUData{
-		Type:      "gpu",
-		TimeStamp: time.Now().Unix(),
+		PerfDataBase: PerfDataBase{
+			Type:      "gpu",
+			TimeStamp: time.Now().Unix(),
+		},
 	}
 
 	defer func() {
@@ -514,31 +522,21 @@ func (c *perfdClient) parseGPU(data interface{}) {
 }
 
 type GPUData struct {
-	Type                string `json:"type"` // gpu
-	TimeStamp           int64  `json:"timestamp"`
-	TilerUtilization    int64  `json:"tiler_utilization"`    // 处理顶点的 GPU 时间占比
-	DeviceUtilization   int64  `json:"device_utilization"`   // 设备利用率
-	RendererUtilization int64  `json:"renderer_utilization"` // 渲染器利用率
-	Msg                 string `json:"msg,omitempty"`        // message for invalid data
+	PerfDataBase              // gpu
+	TilerUtilization    int64 `json:"tiler_utilization"`    // 处理顶点的 GPU 时间占比
+	DeviceUtilization   int64 `json:"device_utilization"`   // 设备利用率
+	RendererUtilization int64 `json:"renderer_utilization"` // 渲染器利用率
 }
 
 type FPSData struct {
-	Type      string `json:"type"` // fps
-	TimeStamp int64  `json:"timestamp"`
-	FPS       int    `json:"fps"`
-	Msg       string `json:"msg,omitempty"` // message for invalid data
+	PerfDataBase     // fps
+	FPS          int `json:"fps"`
 }
 
 func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 	cancel context.CancelFunc, err error) {
 
-	chanID, err := c.i.requestChannel(instrumentsServiceSysmontap)
-	if err != nil {
-		return nil, err
-	}
-
 	// set config
-	args := libimobiledevice.NewAuxBuffer()
 	config := map[string]interface{}{
 		"bm":             0,
 		"cpuUsage":       true,
@@ -562,14 +560,19 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 			"physMemSize",
 		},
 	}
-	args.AppendObject(config)
-	if _, err = c.i.client.Invoke("setConfig:", args, chanID, true); err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceSysmontap,
+		"setConfig:",
+		config,
+	); err != nil {
 		return nil, err
 	}
 
 	// start
-	args = libimobiledevice.NewAuxBuffer()
-	if _, err = c.i.client.Invoke("start", args, chanID, false); err != nil {
+	if _, err = c.i.call(
+		instrumentsServiceSysmontap,
+		"start",
+	); err != nil {
 		return nil, err
 	}
 
@@ -578,26 +581,31 @@ func (c *perfdClient) registerSysmontap(pid string, ctx context.Context) (
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
+			c.i.call(instrumentsServiceSysmontap, "stop")
 			return
 		default:
-			c.parseCPUMem(m.Obj, pid)
+			c.parseSysmontap(m.Obj, pid)
 		}
 	})
 
 	return cancel, err
 }
 
-func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
+func (c *perfdClient) parseSysmontap(data interface{}, pid string) {
 	timestamp := time.Now().Unix()
 	cpuInfo := CPUData{
-		Type:      "cpu",
-		TimeStamp: timestamp,
-		ProcPID:   pid,
+		PerfDataBase: PerfDataBase{
+			Type:      "cpu",
+			TimeStamp: timestamp,
+		},
+		ProcPID: pid,
 	}
 	memInfo := MemData{
-		Type:      "mem",
-		TimeStamp: timestamp,
-		ProcPID:   pid,
+		PerfDataBase: PerfDataBase{
+			Type:      "mem",
+			TimeStamp: timestamp,
+		},
+		ProcPID: pid,
 	}
 
 	defer func() {
@@ -696,9 +704,7 @@ func (c *perfdClient) parseCPUMem(data interface{}, pid string) {
 }
 
 type CPUData struct {
-	Type      string `json:"type"` // cpu
-	TimeStamp int64  `json:"timestamp"`
-	Msg       string `json:"msg,omitempty"` // message for invalid data
+	PerfDataBase // cpu
 	// system
 	CPUCount             int     `json:"cpu_count"`     // CPU总数
 	SysCPUUsageTotalLoad float64 `json:"sys_cpu_usage"` // 系统总体CPU占用
@@ -710,14 +716,12 @@ type CPUData struct {
 }
 
 type MemData struct {
-	Type       string `json:"type"` // mem
-	TimeStamp  int64  `json:"timestamp"`
-	Anon       int64  `json:"anon"`          // 虚拟内存
-	PhysMemory int64  `json:"phys_memory"`   // 物理内存
-	Rss        int64  `json:"rss"`           // 总内存
-	Vss        int64  `json:"vss"`           // 虚拟内存
-	ProcPID    string `json:"pid"`           // 进程 PID
-	Msg        string `json:"msg,omitempty"` // message for invalid data
+	PerfDataBase        // mem
+	Anon         int64  `json:"anon"`        // 虚拟内存
+	PhysMemory   int64  `json:"phys_memory"` // 物理内存
+	Rss          int64  `json:"rss"`         // 总内存
+	Vss          int64  `json:"vss"`         // 虚拟内存
+	ProcPID      string `json:"pid"`         // 进程 PID
 }
 
 func convertProcessData(procData interface{}) map[string]interface{} {
