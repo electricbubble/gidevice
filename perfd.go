@@ -725,8 +725,14 @@ func (c *perfdClient) parseProcessData(dataArray []interface{}) {
 	for idx, value := range c.option.processAttributes {
 		processAttributesMap[value] = convert2Int64(targetProcessValue[idx])
 	}
+	processData["proc_perf"] = processAttributesMap
 
-	processData["attributes"] = processAttributesMap
+	systemAttributesValue := systemInfo["System"].([]interface{})
+	systemAttributesMap := make(map[string]int64)
+	for idx, value := range c.option.systemAttributes {
+		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
+	}
+	processData["sys_perf"] = systemAttributesMap
 }
 
 func (c *perfdClient) parseSystemData(dataArray []interface{}) {
