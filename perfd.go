@@ -168,13 +168,6 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		perfOption.processAttributes = append(perfOption.processAttributes, "pid")
 	}
 
-	if perfOption.bundleID != "" {
-		pid, err := d.getPidByBundleID(perfOption.bundleID)
-		if err == nil {
-			perfOption.pid = strconv.Itoa(pid)
-		}
-	}
-
 	return &perfdClient{
 		i:              i.(*instruments),
 		option:         perfOption,
@@ -193,7 +186,8 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
-	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk || c.option.sysNetwork || c.option.pid != "" {
+	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk ||
+		c.option.sysNetwork || c.option.pid != "" || c.option.bundleID != "" {
 		cancel, err := c.registerSysmontap(context.Background())
 		if err != nil {
 			return nil, err
@@ -645,6 +639,14 @@ func (c *perfdClient) registerSysmontap(ctx context.Context) (
 		return nil, err
 	}
 
+	if c.option.bundleID != "" {
+		pid, err := c.i.getPidByBundleID(c.option.bundleID)
+		if err != nil {
+			return nil, fmt.Errorf("get pid by bundle id error: %v", err)
+		}
+		c.option.pid = strconv.Itoa(pid)
+	}
+
 	// register listener
 	ctx, cancel = context.WithCancel(ctx)
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
@@ -728,7 +730,7 @@ func (c *perfdClient) parseProcessData(dataArray []interface{}) {
 
 	processAttributesMap := make(map[string]interface{})
 	for idx, value := range c.option.processAttributes {
-		processAttributesMap[value] = convert2Int64(targetProcessValue[idx])
+		processAttributesMap[value] = targetProcessValue[idx]
 	}
 	processData["proc_perf"] = processAttributesMap
 

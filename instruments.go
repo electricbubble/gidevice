@@ -62,6 +62,35 @@ func (i *instruments) call(channel, selector string, auxiliaries ...interface{})
 	return i.client.Invoke(selector, args, chanID, true)
 }
 
+func (i *instruments) getPidByBundleID(bundleID string) (pid int, err error) {
+	apps, err := i.AppList()
+	if err != nil {
+		fmt.Printf("get app list error: %v\n", err)
+		return 0, err
+	}
+
+	mapper := make(map[string]interface{})
+	for _, app := range apps {
+		mapper[app.ExecutableName] = app.CFBundleIdentifier
+	}
+
+	processes, err := i.AppRunningProcesses()
+	if err != nil {
+		fmt.Printf("get running app processes error: %v\n", err)
+		return 0, err
+	}
+	for _, proc := range processes {
+		b, ok := mapper[proc.Name]
+		if ok && bundleID == b {
+			fmt.Printf("get pid %d by bundleId %s\n", proc.Pid, bundleID)
+			return proc.Pid, nil
+		}
+	}
+
+	fmt.Printf("can't find pid by bundleID: %s\n", bundleID)
+	return 0, fmt.Errorf("can't find pid by bundleID: %s", bundleID)
+}
+
 func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid int, err error) {
 	opt := new(appLaunchOption)
 	opt.appPath = ""

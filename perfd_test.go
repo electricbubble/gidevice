@@ -39,6 +39,7 @@ func TestPerfProcessMonitor(t *testing.T) {
 		WithPerfProcessAttributes("cpuUsage", "memAnon"),
 		WithPerfOutputInterval(1000),
 		WithPerfPID(100),
+		WithPerfBundleID("com.apple.mobilesafari"), // higher priority than pid
 	)
 	if err != nil {
 		t.Fatal(err)

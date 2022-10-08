@@ -572,34 +572,6 @@ func (d *device) PcapStop() {
 	d.pcapd.Stop()
 }
 
-func (d *device) getPidByBundleID(bundleID string) (pid int, err error) {
-	mapper := make(map[string]interface{})
-	apps, err := d.AppList()
-	if err != nil {
-		fmt.Printf("get app list error: %v\n", err)
-		return -1, err
-	}
-	for _, app := range apps {
-		mapper[app.ExecutableName] = app.CFBundleIdentifier
-	}
-
-	processes, err := d.AppRunningProcesses()
-	if err != nil {
-		fmt.Printf("get running app processes error: %v\n", err)
-		return -1, err
-	}
-	for _, proc := range processes {
-		b, ok := mapper[proc.Name]
-		if ok && bundleID == b {
-			fmt.Printf("get pid %d by bundleId %s\n", proc.Pid, bundleID)
-			return proc.Pid, nil
-		}
-	}
-
-	fmt.Printf("can't find pid by bundleID: %s\n", bundleID)
-	return -1, fmt.Errorf("can't find pid by bundleID: %s", bundleID)
-}
-
 func (d *device) PerfStart(opts ...PerfOption) (data <-chan []byte, err error) {
 	if _, err = d.instrumentsService(); err != nil {
 		return nil, err

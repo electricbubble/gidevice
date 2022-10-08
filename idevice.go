@@ -145,6 +145,7 @@ type Instruments interface {
 	AppList(opts ...AppListOption) (apps []Application, err error)
 	DeviceInfo() (devInfo *DeviceInfo, err error)
 
+	getPidByBundleID(bundleID string) (pid int, err error)
 	appProcess(bundleID string) (err error)
 	startObserving(pid int) (err error)
 
