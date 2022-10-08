@@ -36,7 +36,7 @@ func TestPerfProcessMonitor(t *testing.T) {
 	setupLockdownSrv(t)
 
 	data, err := dev.PerfStart(
-		WithPerfProcessAttributes("pid", "cpuUsage", "memAnon"),
+		WithPerfProcessAttributes("cpuUsage", "memAnon"),
 		WithPerfOutputInterval(1000),
 		WithPerfPID(100),
 	)

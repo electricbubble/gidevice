@@ -163,6 +163,11 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		fn(perfOption)
 	}
 
+	// processAttributes must contain pid, or it can't get process info, reason unknown
+	if !containString(perfOption.processAttributes, "pid") {
+		perfOption.processAttributes = append(perfOption.processAttributes, "pid")
+	}
+
 	if perfOption.bundleID != "" {
 		pid, err := d.getPidByBundleID(perfOption.bundleID)
 		if err == nil {
@@ -908,4 +913,13 @@ func convert2Int64(num interface{}) int64 {
 	}
 	fmt.Printf("convert2Int64 failed: %v, %T\n", num, num)
 	return -1
+}
+
+func containString(ss []string, s string) bool {
+	for _, v := range ss {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }
