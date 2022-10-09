@@ -113,7 +113,7 @@ func (c *dtxMessageClient) SendDTXMessage(selector string, aux []byte, channelCo
 func (c *dtxMessageClient) ReceiveDTXMessage() (result *DTXMessageResult, err error) {
 	bufPayload := new(bytes.Buffer)
 
-	header := new(dtxMessageHeaderPacket)
+	var header *dtxMessageHeaderPacket = nil
 	var needToReply *dtxMessageHeaderPacket = nil
 
 	for {

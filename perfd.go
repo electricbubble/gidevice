@@ -12,35 +12,35 @@ import (
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
 )
 
-type perfOption struct {
+type PerfOptions struct {
 	// system
-	sysCPU     bool
-	sysMem     bool
-	sysDisk    bool
-	sysNetwork bool
+	SysCPU     bool `json:"sys_cpu,omitempty" yaml:"sys_cpu,omitempty"`
+	SysMem     bool `json:"sys_mem,omitempty" yaml:"sys_mem,omitempty"`
+	SysDisk    bool `json:"sys_disk,omitempty" yaml:"sys_disk,omitempty"`
+	SysNetwork bool `json:"sys_network,omitempty" yaml:"sys_network,omitempty"`
 	gpu        bool
-	fps        bool
-	network    bool
+	FPS        bool `json:"fps,omitempty" yaml:"fps,omitempty"`
+	Network    bool `json:"network,omitempty" yaml:"network,omitempty"`
 	// process
-	bundleID string // TODO
-	pid      string
+	BundleID string `json:"bundle_id,omitempty" yaml:"bundle_id,omitempty"`
+	Pid      int    `json:"pid,omitempty" yaml:"pid,omitempty"`
 	// config
-	outputInterval    int // ms
-	systemAttributes  []string
-	processAttributes []string
+	OutputInterval    int      `json:"output_interval,omitempty" yaml:"output_interval,omitempty"` // ms
+	SystemAttributes  []string `json:"system_attributes,omitempty" yaml:"system_attributes,omitempty"`
+	ProcessAttributes []string `json:"process_attributes,omitempty" yaml:"process_attributes,omitempty"`
 }
 
-func defaulPerfOption() *perfOption {
-	return &perfOption{
-		sysCPU:         true, // default on
-		sysMem:         true, // default on
-		sysDisk:        false,
-		sysNetwork:     false,
+func defaulPerfOption() *PerfOptions {
+	return &PerfOptions{
+		SysCPU:         true, // default on
+		SysMem:         true, // default on
+		SysDisk:        false,
+		SysNetwork:     false,
 		gpu:            false,
-		fps:            false,
-		network:        false,
-		outputInterval: 1000, // default 1000ms
-		systemAttributes: []string{
+		FPS:            false,
+		Network:        false,
+		OutputInterval: 1000, // default 1000ms
+		SystemAttributes: []string{
 			// disk
 			"diskBytesRead",
 			"diskBytesWritten",
@@ -61,89 +61,89 @@ func defaulPerfOption() *perfOption {
 			"netPacketsIn",
 			"netPacketsOut",
 		},
-		processAttributes: []string{
+		ProcessAttributes: []string{
 			"pid",
 			"cpuUsage",
 		},
 	}
 }
 
-type PerfOption func(*perfOption)
+type PerfOption func(*PerfOptions)
 
 func WithPerfSystemCPU(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.sysCPU = b
+	return func(opt *PerfOptions) {
+		opt.SysCPU = b
 	}
 }
 
 func WithPerfSystemMem(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.sysMem = b
+	return func(opt *PerfOptions) {
+		opt.SysMem = b
 	}
 }
 
 func WithPerfSystemDisk(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.sysDisk = b
+	return func(opt *PerfOptions) {
+		opt.SysDisk = b
 	}
 }
 
 func WithPerfSystemNetwork(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.sysNetwork = b
+	return func(opt *PerfOptions) {
+		opt.SysNetwork = b
 	}
 }
 
 func WithPerfBundleID(bundleID string) PerfOption {
-	return func(opt *perfOption) {
-		opt.bundleID = bundleID
+	return func(opt *PerfOptions) {
+		opt.BundleID = bundleID
 	}
 }
 
 func WithPerfPID(pid int) PerfOption {
-	return func(opt *perfOption) {
-		opt.pid = strconv.Itoa(pid)
+	return func(opt *PerfOptions) {
+		opt.Pid = pid
 	}
 }
 
 func WithPerfGPU(b bool) PerfOption {
-	return func(opt *perfOption) {
+	return func(opt *PerfOptions) {
 		opt.gpu = b
 	}
 }
 
 func WithPerfFPS(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.fps = b
+	return func(opt *PerfOptions) {
+		opt.FPS = b
 	}
 }
 
 func WithPerfNetwork(b bool) PerfOption {
-	return func(opt *perfOption) {
-		opt.network = b
+	return func(opt *PerfOptions) {
+		opt.Network = b
 	}
 }
 
 func WithPerfOutputInterval(intervalMilliseconds int) PerfOption {
-	return func(opt *perfOption) {
-		opt.outputInterval = intervalMilliseconds
+	return func(opt *PerfOptions) {
+		opt.OutputInterval = intervalMilliseconds
 	}
 }
 
 func WithPerfProcessAttributes(attrs ...string) PerfOption {
-	return func(opt *perfOption) {
-		opt.processAttributes = attrs
+	return func(opt *PerfOptions) {
+		opt.ProcessAttributes = attrs
 	}
 }
 
 func WithPerfSystemAttributes(attrs ...string) PerfOption {
-	return func(opt *perfOption) {
-		opt.systemAttributes = attrs
+	return func(opt *PerfOptions) {
+		opt.SystemAttributes = attrs
 	}
 }
 
 type perfdClient struct {
-	option         *perfOption
+	option         *PerfOptions
 	i              *instruments
 	stop           chan struct{}        // used to stop perf client
 	cancels        []context.CancelFunc // used to cancel all iterators
@@ -164,8 +164,8 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 	}
 
 	// processAttributes must contain pid, or it can't get process info, reason unknown
-	if !containString(perfOption.processAttributes, "pid") {
-		perfOption.processAttributes = append(perfOption.processAttributes, "pid")
+	if !containString(perfOption.ProcessAttributes, "pid") {
+		perfOption.ProcessAttributes = append(perfOption.ProcessAttributes, "pid")
 	}
 
 	return &perfdClient{
@@ -186,8 +186,8 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
 
-	if c.option.sysCPU || c.option.sysMem || c.option.sysDisk ||
-		c.option.sysNetwork || c.option.pid != "" || c.option.bundleID != "" {
+	if c.option.SysCPU || c.option.SysMem || c.option.SysDisk ||
+		c.option.SysNetwork {
 		cancel, err := c.registerSysmontap(context.Background())
 		if err != nil {
 			return nil, err
@@ -195,7 +195,7 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 		c.cancels = append(c.cancels, cancel)
 	}
 
-	if c.option.fps {
+	if c.option.FPS {
 		cancel, err := c.startGetFPS(context.Background())
 		if err != nil {
 			return nil, err
@@ -211,7 +211,7 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 		c.cancels = append(c.cancels, cancel)
 	}
 
-	if c.option.network {
+	if c.option.Network {
 		cancel, err := c.registerNetworking(context.Background())
 		if err != nil {
 			return nil, err
@@ -459,7 +459,7 @@ func (c *perfdClient) startGetFPS(ctx context.Context) (
 	if _, err = c.i.call(
 		instrumentsServiceGraphicsOpengl,
 		"setSamplingRate:",
-		float64(c.option.outputInterval)/100,
+		float64(c.option.OutputInterval)/100,
 	); err != nil {
 		return nil, err
 	}
@@ -531,7 +531,7 @@ func (c *perfdClient) startGetGPU(ctx context.Context) (
 	if _, err = c.i.call(
 		instrumentsServiceGraphicsOpengl,
 		"setSamplingRate:",
-		float64(c.option.outputInterval)/100,
+		float64(c.option.OutputInterval)/100,
 	); err != nil {
 		return nil, err
 	}
@@ -619,9 +619,9 @@ func (c *perfdClient) registerSysmontap(ctx context.Context) (
 		"bm":             0,
 		"cpuUsage":       true,
 		"sampleInterval": time.Second * 1,            // 1s
-		"ur":             c.option.outputInterval,    // 输出频率
-		"procAttrs":      c.option.processAttributes, // process performance
-		"sysAttrs":       c.option.systemAttributes,  // system performance
+		"ur":             c.option.OutputInterval,    // 输出频率
+		"procAttrs":      c.option.ProcessAttributes, // process performance
+		"sysAttrs":       c.option.SystemAttributes,  // system performance
 	}
 	if _, err = c.i.call(
 		instrumentsServiceSysmontap,
@@ -639,14 +639,6 @@ func (c *perfdClient) registerSysmontap(ctx context.Context) (
 		return nil, err
 	}
 
-	if c.option.bundleID != "" {
-		pid, err := c.i.getPidByBundleID(c.option.bundleID)
-		if err != nil {
-			return nil, fmt.Errorf("get pid by bundle id error: %v", err)
-		}
-		c.option.pid = strconv.Itoa(pid)
-	}
-
 	// register listener
 	ctx, cancel = context.WithCancel(ctx)
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
@@ -659,7 +651,17 @@ func (c *perfdClient) registerSysmontap(ctx context.Context) (
 			if !ok || len(dataArray) != 2 {
 				return
 			}
-			if c.option.pid != "" {
+
+			if c.option.BundleID != "" {
+				pid, err := c.i.getPidByBundleID(c.option.BundleID)
+				if err != nil {
+					fmt.Printf("get pid by bundle id failed: %v", err)
+					return
+				}
+				c.option.Pid = pid
+			}
+
+			if c.option.Pid != 0 {
 				c.parseProcessData(dataArray)
 			} else {
 				c.parseSystemData(dataArray)
@@ -701,7 +703,7 @@ func (c *perfdClient) parseProcessData(dataArray []interface{}) {
 	processData := make(map[string]interface{})
 	processData["type"] = "process"
 	processData["timestamp"] = time.Now().Unix()
-	processData["pid"] = c.option.pid
+	processData["pid"] = c.option.Pid
 
 	defer func() {
 		processBytes, _ := json.Marshal(processData)
@@ -717,26 +719,26 @@ func (c *perfdClient) parseProcessData(dataArray []interface{}) {
 	var targetProcessValue []interface{}
 	processList := processInfo["Processes"].(map[string]interface{})
 	for pid, v := range processList {
-		if pid != c.option.pid {
+		if pid != strconv.Itoa(c.option.Pid) {
 			continue
 		}
 		targetProcessValue = v.([]interface{})
 	}
 
 	if targetProcessValue == nil {
-		processData["msg"] = fmt.Sprintf("process %s not found", c.option.pid)
+		processData["msg"] = fmt.Sprintf("process %d not found", c.option.Pid)
 		return
 	}
 
 	processAttributesMap := make(map[string]interface{})
-	for idx, value := range c.option.processAttributes {
+	for idx, value := range c.option.ProcessAttributes {
 		processAttributesMap[value] = targetProcessValue[idx]
 	}
 	processData["proc_perf"] = processAttributesMap
 
 	systemAttributesValue := systemInfo["System"].([]interface{})
 	systemAttributesMap := make(map[string]int64)
-	for idx, value := range c.option.systemAttributes {
+	for idx, value := range c.option.SystemAttributes {
 		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
 	}
 	processData["sys_perf"] = systemAttributesMap
@@ -773,7 +775,7 @@ func (c *perfdClient) parseSystemData(dataArray []interface{}) {
 	//   Type:41
 	// ]
 
-	if c.option.sysCPU {
+	if c.option.SysCPU {
 		sysCPUUsage := systemInfo["SystemCPUUsage"].(map[string]interface{})
 		sysCPUInfo := SystemCPUData{
 			PerfDataBase: PerfDataBase{
@@ -791,11 +793,11 @@ func (c *perfdClient) parseSystemData(dataArray []interface{}) {
 
 	systemAttributesValue := systemInfo["System"].([]interface{})
 	systemAttributesMap := make(map[string]int64)
-	for idx, value := range c.option.systemAttributes {
+	for idx, value := range c.option.SystemAttributes {
 		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
 	}
 
-	if c.option.sysMem {
+	if c.option.SysMem {
 		kernelPageSize := int64(1) // why 16384 ?
 		appMemory := (systemAttributesMap["vmIntPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
 		cachedFiles := (systemAttributesMap["vmExtPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
@@ -822,7 +824,7 @@ func (c *perfdClient) parseSystemData(dataArray []interface{}) {
 		c.chanSysMem <- memBytes
 	}
 
-	if c.option.sysDisk {
+	if c.option.SysDisk {
 		diskBytesRead := systemAttributesMap["diskBytesRead"]
 		diskBytesWritten := systemAttributesMap["diskBytesWritten"]
 		diskReadOps := systemAttributesMap["diskReadOps"]
@@ -842,7 +844,7 @@ func (c *perfdClient) parseSystemData(dataArray []interface{}) {
 		c.chanSysDisk <- diskBytes
 	}
 
-	if c.option.sysNetwork {
+	if c.option.SysNetwork {
 		netBytesIn := systemAttributesMap["netBytesIn"]
 		netBytesOut := systemAttributesMap["netBytesOut"]
 		netPacketsIn := systemAttributesMap["netPacketsIn"]

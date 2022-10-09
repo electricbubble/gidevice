@@ -12,9 +12,9 @@ const (
 	instrumentsServiceDeviceInfo              = "com.apple.instruments.server.services.deviceinfo"
 	instrumentsServiceProcessControl          = "com.apple.instruments.server.services.processcontrol"
 	instrumentsServiceDeviceApplictionListing = "com.apple.instruments.server.services.device.applictionListing"
-	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"     // 获取FPS
-	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"           // 获取 CPU/Mem 性能数据
-	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"          // 获取全局网络数据
+	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"     // 获取 GPU/FPS
+	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"           // 获取 CPU/Mem/Disk/Network 性能数据
+	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"          // 获取所有网络详情数据
 	instrumentsServiceMobileNotifications     = "com.apple.instruments.server.services.mobilenotifications" // 监控应用状态
 )
 
