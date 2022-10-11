@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"time"
 
@@ -144,7 +145,7 @@ func WithPerfSystemAttributes(attrs ...string) PerfOption {
 
 type perfdClient struct {
 	option         *PerfOptions
-	i              *instruments
+	i              Instruments
 	stop           chan struct{}        // used to stop perf client
 	cancels        []context.CancelFunc // used to cancel all iterators
 	chanSysCPU     chan []byte          // system cpu channel
@@ -163,13 +164,23 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		fn(perfOption)
 	}
 
+	// wait until get pid for bundle id
+	if perfOption.BundleID != "" {
+		var err error
+		perfOption.Pid, err = d.waitForBundleUp(perfOption.BundleID)
+		if err != nil {
+			fmt.Printf("get pid by bundle id failed: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// processAttributes must contain pid, or it can't get process info, reason unknown
 	if !containString(perfOption.ProcessAttributes, "pid") {
 		perfOption.ProcessAttributes = append(perfOption.ProcessAttributes, "pid")
 	}
 
 	return &perfdClient{
-		i:              i.(*instruments),
+		i:              i,
 		option:         perfOption,
 		stop:           make(chan struct{}),
 		chanSysCPU:     make(chan []byte, 10),
@@ -180,6 +191,26 @@ func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient 
 		chanFPS:        make(chan []byte, 10),
 		chanNetwork:    make(chan []byte, 10),
 		chanProcess:    make(chan []byte, 10),
+	}
+}
+
+func (d *device) waitForBundleUp(bundleID string) (pid int, err error) {
+	// NOTICE: each instruments service should have individual connection, otherwise it will be blocked
+	var instruments Instruments
+	if _, err = d.lockdownService(); err != nil {
+		return
+	}
+	if instruments, err = d.lockdown.InstrumentsService(); err != nil {
+		return
+	}
+
+	for {
+		pid, err := instruments.getPidByBundleID(bundleID)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		return pid, nil
 	}
 }
 
@@ -650,15 +681,6 @@ func (c *perfdClient) registerSysmontap(ctx context.Context) (
 			dataArray, ok := m.Obj.([]interface{})
 			if !ok || len(dataArray) != 2 {
 				return
-			}
-
-			if c.option.BundleID != "" {
-				pid, err := c.i.getPidByBundleID(c.option.BundleID)
-				if err != nil {
-					fmt.Printf("get pid by bundle id failed: %v", err)
-					return
-				}
-				c.option.Pid = pid
 			}
 
 			if c.option.Pid != 0 {

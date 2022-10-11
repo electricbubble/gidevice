@@ -151,6 +151,7 @@ type Instruments interface {
 
 	notifyOfPublishedCapabilities() (err error)
 	requestChannel(channel string) (id uint32, err error)
+	call(channel, selector string, auxiliaries ...interface{}) (result *libimobiledevice.DTXMessageResult, err error)
 
 	// sysMonSetConfig(cfg ...interface{}) (err error)
 	// SysMonStart(cfg ...interface{}) (_ interface{}, err error)

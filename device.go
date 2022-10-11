@@ -801,7 +801,6 @@ func (d *device) XCTest(bundleID string, opts ...XCTestOption) (out <-chan strin
 		}
 		// time.Sleep(time.Second)
 		close(_out)
-		return
 	}()
 
 	return _out, cancelFunc, err

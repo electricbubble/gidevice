@@ -36,7 +36,8 @@ func (t *testmanagerd) newXCTestManagerDaemon() (xcTestManager XCTestManagerDaem
 	return
 }
 
-func (t *testmanagerd) invoke(selector string, args *libimobiledevice.AuxBuffer, channelCode uint32, expectsReply bool) (result *libimobiledevice.DTXMessageResult, err error) {
+func (t *testmanagerd) invoke(selector string, args *libimobiledevice.AuxBuffer, channelCode uint32, expectsReply bool) (
+	result *libimobiledevice.DTXMessageResult, err error) {
 	return t.client.Invoke(selector, args, channelCode, expectsReply)
 }
 
