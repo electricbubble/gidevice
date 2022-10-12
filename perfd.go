@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"time"
 
@@ -144,116 +143,96 @@ func WithPerfSystemAttributes(attrs ...string) PerfOption {
 }
 
 type perfdClient struct {
-	option         *PerfOptions
-	i              Instruments
-	stop           chan struct{}        // used to stop perf client
-	cancels        []context.CancelFunc // used to cancel all iterators
-	chanSysCPU     chan []byte          // system cpu channel
-	chanSysMem     chan []byte          // system mem channel
-	chanSysDisk    chan []byte          // system disk channel
-	chanSysNetwork chan []byte          // system network channel
-	chanGPU        chan []byte          // gpu channel
-	chanFPS        chan []byte          // fps channel
-	chanNetwork    chan []byte          // network channel
-	chanProcess    chan []byte          // process channel
+	options *PerfOptions
+	i       Instruments
+	stop    chan struct{}      // used to stop perf client
+	cancel  context.CancelFunc // used to cancel all iterators
 }
 
-func (d *device) newPerfdClient(i Instruments, opts ...PerfOption) *perfdClient {
-	perfOption := defaulPerfOption()
-	for _, fn := range opts {
-		fn(perfOption)
+func (d *device) newPerfdSysmontap(options *PerfOptions) (*perfdSysmontap, error) {
+	instruments, err := d.newInstrumentsService()
+	if err != nil {
+		return nil, err
 	}
-
-	// wait until get pid for bundle id
-	if perfOption.BundleID != "" {
-		var err error
-		perfOption.Pid, err = d.waitForBundleUp(perfOption.BundleID)
-		if err != nil {
-			fmt.Printf("get pid by bundle id failed: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// processAttributes must contain pid, or it can't get process info, reason unknown
-	if !containString(perfOption.ProcessAttributes, "pid") {
-		perfOption.ProcessAttributes = append(perfOption.ProcessAttributes, "pid")
-	}
-
-	return &perfdClient{
-		i:              i,
-		option:         perfOption,
-		stop:           make(chan struct{}),
+	return &perfdSysmontap{
+		perfdClient: perfdClient{
+			i:       instruments,
+			options: options,
+			stop:    make(chan struct{}),
+		},
 		chanSysCPU:     make(chan []byte, 10),
 		chanSysMem:     make(chan []byte, 10),
 		chanSysDisk:    make(chan []byte, 10),
 		chanSysNetwork: make(chan []byte, 10),
-		chanGPU:        make(chan []byte, 10),
-		chanFPS:        make(chan []byte, 10),
-		chanNetwork:    make(chan []byte, 10),
 		chanProcess:    make(chan []byte, 10),
-	}
+	}, nil
 }
 
-func (d *device) waitForBundleUp(bundleID string) (pid int, err error) {
-	// NOTICE: each instruments service should have individual connection, otherwise it will be blocked
-	var instruments Instruments
-	if _, err = d.lockdownService(); err != nil {
-		return
+type perfdSysmontap struct {
+	perfdClient
+	chanSysCPU     chan []byte // system cpu channel
+	chanSysMem     chan []byte // system mem channel
+	chanSysDisk    chan []byte // system disk channel
+	chanSysNetwork chan []byte // system network channel
+	chanProcess    chan []byte // process channel
+}
+
+func (c *perfdSysmontap) Start() (data <-chan []byte, err error) {
+
+	// set config
+	config := map[string]interface{}{
+		"bm":             0,
+		"cpuUsage":       true,
+		"sampleInterval": time.Second * 1,             // 1s
+		"ur":             c.options.OutputInterval,    // 输出频率
+		"procAttrs":      c.options.ProcessAttributes, // process performance
+		"sysAttrs":       c.options.SystemAttributes,  // system performance
 	}
-	if instruments, err = d.lockdown.InstrumentsService(); err != nil {
-		return
+	if _, err = c.i.call(
+		instrumentsServiceSysmontap,
+		"setConfig:",
+		config,
+	); err != nil {
+		return nil, err
 	}
 
-	for {
-		pid, err := instruments.getPidByBundleID(bundleID)
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
+	// start
+	if _, err = c.i.call(
+		instrumentsServiceSysmontap,
+		"start",
+	); err != nil {
+		return nil, err
+	}
+
+	// register listener
+	ctx, cancel := context.WithCancel(context.TODO())
+	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
+		select {
+		case <-ctx.Done():
+			c.i.call(instrumentsServiceSysmontap, "stop")
+			return
+		default:
+			dataArray, ok := m.Obj.([]interface{})
+			if !ok || len(dataArray) != 2 {
+				return
+			}
+
+			if c.options.Pid != 0 {
+				c.parseProcessData(dataArray)
+			} else {
+				c.parseSystemData(dataArray)
+			}
 		}
-		return pid, nil
-	}
-}
+	})
+	c.cancel = cancel
 
-func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	outCh := make(chan []byte, 100)
-
-	if c.option.SysCPU || c.option.SysMem || c.option.SysDisk ||
-		c.option.SysNetwork {
-		cancel, err := c.registerSysmontap(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		c.cancels = append(c.cancels, cancel)
-	}
-
-	if c.option.FPS {
-		cancel, err := c.startGetFPS(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		c.cancels = append(c.cancels, cancel)
-	}
-
-	if c.option.gpu {
-		cancel, err := c.startGetGPU(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		c.cancels = append(c.cancels, cancel)
-	}
-
-	if c.option.Network {
-		cancel, err := c.registerNetworking(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		c.cancels = append(c.cancels, cancel)
-	}
 
 	go func() {
 		for {
 			select {
 			case <-c.stop:
+				c.cancel()
 				return
 			case cpuBytes, ok := <-c.chanSysCPU:
 				if ok {
@@ -271,18 +250,6 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 				if ok {
 					outCh <- networkBytes
 				}
-			case gpuBytes, ok := <-c.chanGPU:
-				if ok {
-					outCh <- gpuBytes
-				}
-			case fpsBytes, ok := <-c.chanFPS:
-				if ok {
-					outCh <- fpsBytes
-				}
-			case networkBytes, ok := <-c.chanNetwork:
-				if ok {
-					outCh <- networkBytes
-				}
 			case processBytes, ok := <-c.chanProcess:
 				if ok {
 					outCh <- processBytes
@@ -294,15 +261,259 @@ func (c *perfdClient) Start() (data <-chan []byte, err error) {
 	return outCh, nil
 }
 
-func (c *perfdClient) Stop() {
+func (c *perfdSysmontap) Stop() {
 	close(c.stop)
-	for _, cancel := range c.cancels {
-		cancel()
+}
+
+func (c *perfdSysmontap) parseProcessData(dataArray []interface{}) {
+	// dataArray example:
+	// [
+	//   map[
+	//     CPUCount:2
+	//     EnabledCPUs:2
+	//     PerCPUUsage:[
+	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.6363636363636402 CPU_UserLoad:-1]
+	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:2.7272727272727195 CPU_UserLoad:-1]
+	//     ]
+	//     System:[36408520704 6897049600 3031160 773697 15596 61940 1297 26942 588 17020 127346 1835008 119718056 107009899 174046 103548]
+	//     SystemCPUUsage:map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:6.36363636363636 CPU_UserLoad:-1]
+	//     StartMachAbsTime:5896602132889
+	//     EndMachAbsTime:5896628486761
+	//     Type:41
+	//  ]
+	//  map[
+	//    Processes:map[
+	//      0:[1.3582834340402803 0]
+	//      124:[0.011456702068519481 124]
+	//      136:[0.05468332721703649 136]
+	//    ]
+	//    StartMachAbsTime:5896602295095
+	//    EndMachAbsTime:5896628780514
+	//    Type:5
+	//   ]
+	// ]
+
+	processData := make(map[string]interface{})
+	processData["type"] = "process"
+	processData["timestamp"] = time.Now().Unix()
+	processData["pid"] = c.options.Pid
+
+	defer func() {
+		processBytes, _ := json.Marshal(processData)
+		c.chanProcess <- processBytes
+	}()
+
+	systemInfo := dataArray[0].(map[string]interface{})
+	processInfo := dataArray[1].(map[string]interface{})
+	if _, ok := systemInfo["System"]; !ok {
+		systemInfo, processInfo = processInfo, systemInfo
+	}
+
+	var targetProcessValue []interface{}
+	processList := processInfo["Processes"].(map[string]interface{})
+	for pid, v := range processList {
+		if pid != strconv.Itoa(c.options.Pid) {
+			continue
+		}
+		targetProcessValue = v.([]interface{})
+	}
+
+	if targetProcessValue == nil {
+		processData["msg"] = fmt.Sprintf("process %d not found", c.options.Pid)
+		return
+	}
+
+	processAttributesMap := make(map[string]interface{})
+	for idx, value := range c.options.ProcessAttributes {
+		processAttributesMap[value] = targetProcessValue[idx]
+	}
+	processData["proc_perf"] = processAttributesMap
+
+	systemAttributesValue := systemInfo["System"].([]interface{})
+	systemAttributesMap := make(map[string]int64)
+	for idx, value := range c.options.SystemAttributes {
+		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
+	}
+	processData["sys_perf"] = systemAttributesMap
+}
+
+func (c *perfdSysmontap) parseSystemData(dataArray []interface{}) {
+	timestamp := time.Now().Unix()
+	var systemInfo map[string]interface{}
+	data1 := dataArray[0].(map[string]interface{})
+	data2 := dataArray[1].(map[string]interface{})
+	if _, ok := data1["SystemCPUUsage"]; ok {
+		systemInfo = data1
+	} else {
+		systemInfo = data2
+	}
+
+	// systemInfo example:
+	// map[
+	//   CPUCount:2
+	//   EnabledCPUs:2
+	//   PerCPUUsage:[
+	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.9215686274509807 CPU_UserLoad:-1]
+	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:11.650485436893206 CPU_UserLoad:-1]]
+	//   ]
+	//   System:[704211 35486281728 6303789056 3001119 1001 11033 52668 1740 40022 2114 17310 126903 1835008 160323 107909856 95067 95808179]
+	//   SystemCPUUsage:map[
+	//     CPU_NiceLoad:0
+	//     CPU_SystemLoad:-1
+	//     CPU_TotalLoad:15.572054064344186
+	//     CPU_UserLoad:-1
+	//   ]
+	//   StartMachAbsTime:5339240248449
+	//   EndMachAbsTime:5339264441260
+	//   Type:41
+	// ]
+
+	if c.options.SysCPU {
+		sysCPUUsage := systemInfo["SystemCPUUsage"].(map[string]interface{})
+		sysCPUInfo := SystemCPUData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_cpu",
+				TimeStamp: timestamp,
+			},
+			NiceLoad:   sysCPUUsage["CPU_NiceLoad"].(float64),
+			SystemLoad: sysCPUUsage["CPU_SystemLoad"].(float64),
+			TotalLoad:  sysCPUUsage["CPU_TotalLoad"].(float64),
+			UserLoad:   sysCPUUsage["CPU_UserLoad"].(float64),
+		}
+		cpuBytes, _ := json.Marshal(sysCPUInfo)
+		c.chanSysCPU <- cpuBytes
+	}
+
+	systemAttributesValue := systemInfo["System"].([]interface{})
+	systemAttributesMap := make(map[string]int64)
+	for idx, value := range c.options.SystemAttributes {
+		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
+	}
+
+	if c.options.SysMem {
+		kernelPageSize := int64(1) // why 16384 ?
+		appMemory := (systemAttributesMap["vmIntPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
+		cachedFiles := (systemAttributesMap["vmExtPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
+		compressed := systemAttributesMap["vmCompressorPageCount"] * kernelPageSize
+		usedMemory := (systemAttributesMap["vmUsedCount"] - systemAttributesMap["vmExtPageCount"]) * kernelPageSize
+		wiredMemory := systemAttributesMap["vmWireCount"] * kernelPageSize
+		swapUsed := systemAttributesMap["__vmSwapUsage"]
+		freeMemory := systemAttributesMap["vmFreeCount"] * kernelPageSize
+
+		sysMemInfo := SystemMemData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_mem",
+				TimeStamp: timestamp,
+			},
+			AppMemory:   appMemory,
+			UsedMemory:  usedMemory,
+			WiredMemory: wiredMemory,
+			FreeMemory:  freeMemory,
+			CachedFiles: cachedFiles,
+			Compressed:  compressed,
+			SwapUsed:    swapUsed,
+		}
+		memBytes, _ := json.Marshal(sysMemInfo)
+		c.chanSysMem <- memBytes
+	}
+
+	if c.options.SysDisk {
+		diskBytesRead := systemAttributesMap["diskBytesRead"]
+		diskBytesWritten := systemAttributesMap["diskBytesWritten"]
+		diskReadOps := systemAttributesMap["diskReadOps"]
+		diskWriteOps := systemAttributesMap["diskWriteOps"]
+
+		sysDiskInfo := SystemDiskData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_disk",
+				TimeStamp: timestamp,
+			},
+			DataRead:    diskBytesRead,
+			DataWritten: diskBytesWritten,
+			ReadOps:     diskReadOps,
+			WriteOps:    diskWriteOps,
+		}
+		diskBytes, _ := json.Marshal(sysDiskInfo)
+		c.chanSysDisk <- diskBytes
+	}
+
+	if c.options.SysNetwork {
+		netBytesIn := systemAttributesMap["netBytesIn"]
+		netBytesOut := systemAttributesMap["netBytesOut"]
+		netPacketsIn := systemAttributesMap["netPacketsIn"]
+		netPacketsOut := systemAttributesMap["netPacketsOut"]
+
+		sysNetworkInfo := SystemNetworkData{
+			PerfDataBase: PerfDataBase{
+				Type:      "sys_network",
+				TimeStamp: timestamp,
+			},
+			BytesIn:    netBytesIn,
+			BytesOut:   netBytesOut,
+			PacketsIn:  netPacketsIn,
+			PacketsOut: netPacketsOut,
+		}
+		networkBytes, _ := json.Marshal(sysNetworkInfo)
+		c.chanSysNetwork <- networkBytes
 	}
 }
 
-func (c *perfdClient) registerNetworking(ctx context.Context) (
-	cancel context.CancelFunc, err error) {
+type SystemCPUData struct {
+	PerfDataBase         // system cpu
+	NiceLoad     float64 `json:"nice_load"`
+	SystemLoad   float64 `json:"system_load"`
+	TotalLoad    float64 `json:"total_load"`
+	UserLoad     float64 `json:"user_load"`
+}
+
+type SystemMemData struct {
+	PerfDataBase       // mem
+	AppMemory    int64 `json:"app_memory"`
+	FreeMemory   int64 `json:"free_memory"`
+	UsedMemory   int64 `json:"used_memory"`
+	WiredMemory  int64 `json:"wired_memory"`
+	CachedFiles  int64 `json:"cached_files"`
+	Compressed   int64 `json:"compressed"`
+	SwapUsed     int64 `json:"swap_used"`
+}
+
+type SystemDiskData struct {
+	PerfDataBase       // disk
+	DataRead     int64 `json:"data_read"`
+	DataWritten  int64 `json:"data_written"`
+	ReadOps      int64 `json:"reads_in"`
+	WriteOps     int64 `json:"writes_out"`
+}
+
+type SystemNetworkData struct {
+	PerfDataBase       // network
+	BytesIn      int64 `json:"bytes_in"`
+	BytesOut     int64 `json:"bytes_out"`
+	PacketsIn    int64 `json:"packets_in"`
+	PacketsOut   int64 `json:"packets_out"`
+}
+
+func (d *device) newPerfdNetworking(options *PerfOptions) (*perfdNetworking, error) {
+	instruments, err := d.newInstrumentsService()
+	if err != nil {
+		return nil, err
+	}
+	return &perfdNetworking{
+		perfdClient: perfdClient{
+			i:       instruments,
+			options: options,
+			stop:    make(chan struct{}),
+		},
+		chanNetwork: make(chan []byte, 10),
+	}, nil
+}
+
+type perfdNetworking struct {
+	perfdClient
+	chanNetwork chan []byte // network channel
+}
+
+func (c *perfdNetworking) Start() (data <-chan []byte, err error) {
 
 	if _, err = c.i.call(
 		instrumentsServiceNetworking,
@@ -318,7 +529,7 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 		return nil, err
 	}
 
-	ctx, cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.TODO())
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
@@ -328,11 +539,32 @@ func (c *perfdClient) registerNetworking(ctx context.Context) (
 			c.parseNetworking(m.Obj)
 		}
 	})
+	c.cancel = cancel
 
-	return
+	outCh := make(chan []byte, 100)
+
+	go func() {
+		for {
+			select {
+			case <-c.stop:
+				c.cancel()
+				return
+			case networkBytes, ok := <-c.chanNetwork:
+				if ok {
+					outCh <- networkBytes
+				}
+			}
+		}
+	}()
+
+	return outCh, nil
 }
 
-func (c *perfdClient) parseNetworking(data interface{}) {
+func (c *perfdNetworking) Stop() {
+	close(c.stop)
+}
+
+func (c *perfdNetworking) parseNetworking(data interface{}) {
 	raw, ok := data.([]interface{})
 	if !ok || len(raw) != 2 {
 		fmt.Printf("invalid networking data: %v\n", data)
@@ -484,13 +716,34 @@ type NetworkDataConnectionUpdate struct {
 	ConnectionSerial int64 `json:"connection_serial"` // 9
 }
 
-func (c *perfdClient) startGetFPS(ctx context.Context) (
-	cancel context.CancelFunc, err error) {
+func (d *device) newPerfdGraphicsOpengl(options *PerfOptions) (*perfdGraphicsOpengl, error) {
+	instruments, err := d.newInstrumentsService()
+	if err != nil {
+		return nil, err
+	}
+	return &perfdGraphicsOpengl{
+		perfdClient: perfdClient{
+			i:       instruments,
+			options: options,
+			stop:    make(chan struct{}),
+		},
+		chanGPU: make(chan []byte, 10),
+		chanFPS: make(chan []byte, 10),
+	}, nil
+}
+
+type perfdGraphicsOpengl struct {
+	perfdClient
+	chanGPU chan []byte // gpu channel
+	chanFPS chan []byte // fps channel
+}
+
+func (c *perfdGraphicsOpengl) Start() (data <-chan []byte, err error) {
 
 	if _, err = c.i.call(
 		instrumentsServiceGraphicsOpengl,
 		"setSamplingRate:",
-		float64(c.option.OutputInterval)/100,
+		float64(c.options.OutputInterval)/100,
 	); err != nil {
 		return nil, err
 	}
@@ -503,98 +756,51 @@ func (c *perfdClient) startGetFPS(ctx context.Context) (
 		return nil, err
 	}
 
-	ctx, cancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.TODO())
 	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
 		select {
 		case <-ctx.Done():
 			c.i.call(instrumentsServiceGraphicsOpengl, "stopSampling")
 			return
 		default:
-			c.parseFPS(m.Obj)
+			c.parseData(m.Obj)
 		}
 	})
+	c.cancel = cancel
 
-	return
+	outCh := make(chan []byte, 100)
+
+	go func() {
+		for {
+			select {
+			case <-c.stop:
+				c.cancel()
+				return
+			case gpuBytes, ok := <-c.chanGPU:
+				if ok {
+					outCh <- gpuBytes
+				}
+			case fpsBytes, ok := <-c.chanFPS:
+				if ok {
+					outCh <- fpsBytes
+				}
+			}
+		}
+	}()
+
+	return outCh, nil
 }
 
-func (c *perfdClient) parseFPS(data interface{}) {
+func (c *perfdGraphicsOpengl) Stop() {
+	close(c.stop)
+}
+
+func (c *perfdGraphicsOpengl) parseData(data interface{}) {
 	// data example:
 	// map[
 	//   Alloc system memory:50167808
 	//   Allocated PB Size:1179648
 	//   CoreAnimationFramesPerSecond:0  // fps from GPU
-	//   Device Utilization %:0
-	//   IOGLBundleName:Built-In
-	//   In use system memory:10633216
-	//   Renderer Utilization %:0
-	//   SplitSceneCount:0
-	//   TiledSceneBytes:0
-	//   Tiler Utilization %:0
-	//   XRVideoCardRunTimeStamp:1010679
-	//   recoveryCount:0
-	// ]
-
-	fpsInfo := FPSData{
-		PerfDataBase: PerfDataBase{
-			Type:      "fps",
-			TimeStamp: time.Now().Unix(),
-		},
-	}
-
-	defer func() {
-		fpsBytes, _ := json.Marshal(fpsInfo)
-		c.chanFPS <- fpsBytes
-	}()
-
-	raw, ok := data.(map[string]interface{})
-	if !ok {
-		fpsInfo.Msg = fmt.Sprintf("invalid graphics.opengl data: %v", data)
-		return
-	}
-
-	// fps
-	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
-}
-
-func (c *perfdClient) startGetGPU(ctx context.Context) (
-	cancel context.CancelFunc, err error) {
-
-	if _, err = c.i.call(
-		instrumentsServiceGraphicsOpengl,
-		"setSamplingRate:",
-		float64(c.option.OutputInterval)/100,
-	); err != nil {
-		return nil, err
-	}
-
-	if _, err = c.i.call(
-		instrumentsServiceGraphicsOpengl,
-		"startSamplingAtTimeInterval:",
-		0,
-	); err != nil {
-		return nil, err
-	}
-
-	ctx, cancel = context.WithCancel(ctx)
-	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		select {
-		case <-ctx.Done():
-			c.i.call(instrumentsServiceGraphicsOpengl, "stopSampling")
-			return
-		default:
-			c.parseGPU(m.Obj)
-		}
-	})
-
-	return
-}
-
-func (c *perfdClient) parseGPU(data interface{}) {
-	// data example:
-	// map[
-	//   Alloc system memory:50167808
-	//   Allocated PB Size:1179648
-	//   CoreAnimationFramesPerSecond:0
 	//   Device Utilization %:0          // device
 	//   IOGLBundleName:Built-In
 	//   In use system memory:10633216
@@ -612,10 +818,22 @@ func (c *perfdClient) parseGPU(data interface{}) {
 			TimeStamp: time.Now().Unix(),
 		},
 	}
+	fpsInfo := FPSData{
+		PerfDataBase: PerfDataBase{
+			Type:      "fps",
+			TimeStamp: time.Now().Unix(),
+		},
+	}
 
 	defer func() {
-		gpuBytes, _ := json.Marshal(gpuInfo)
-		c.chanGPU <- gpuBytes
+		if c.options.gpu {
+			gpuBytes, _ := json.Marshal(gpuInfo)
+			c.chanGPU <- gpuBytes
+		}
+		if c.options.FPS {
+			fpsBytes, _ := json.Marshal(fpsInfo)
+			c.chanFPS <- fpsBytes
+		}
 	}()
 
 	raw, ok := data.(map[string]interface{})
@@ -628,6 +846,9 @@ func (c *perfdClient) parseGPU(data interface{}) {
 	gpuInfo.DeviceUtilization = convert2Int64(raw["Device Utilization %"])
 	gpuInfo.TilerUtilization = convert2Int64(raw["Tiler Utilization %"])
 	gpuInfo.RendererUtilization = convert2Int64(raw["Renderer Utilization %"])
+
+	// fps
+	fpsInfo.FPS = int(convert2Int64(raw["CoreAnimationFramesPerSecond"]))
 }
 
 type GPUData struct {
@@ -640,286 +861,6 @@ type GPUData struct {
 type FPSData struct {
 	PerfDataBase     // fps
 	FPS          int `json:"fps"`
-}
-
-func (c *perfdClient) registerSysmontap(ctx context.Context) (
-	cancel context.CancelFunc, err error) {
-
-	// set config
-	config := map[string]interface{}{
-		"bm":             0,
-		"cpuUsage":       true,
-		"sampleInterval": time.Second * 1,            // 1s
-		"ur":             c.option.OutputInterval,    // 输出频率
-		"procAttrs":      c.option.ProcessAttributes, // process performance
-		"sysAttrs":       c.option.SystemAttributes,  // system performance
-	}
-	if _, err = c.i.call(
-		instrumentsServiceSysmontap,
-		"setConfig:",
-		config,
-	); err != nil {
-		return nil, err
-	}
-
-	// start
-	if _, err = c.i.call(
-		instrumentsServiceSysmontap,
-		"start",
-	); err != nil {
-		return nil, err
-	}
-
-	// register listener
-	ctx, cancel = context.WithCancel(ctx)
-	c.i.registerCallback("", func(m libimobiledevice.DTXMessageResult) {
-		select {
-		case <-ctx.Done():
-			c.i.call(instrumentsServiceSysmontap, "stop")
-			return
-		default:
-			dataArray, ok := m.Obj.([]interface{})
-			if !ok || len(dataArray) != 2 {
-				return
-			}
-
-			if c.option.Pid != 0 {
-				c.parseProcessData(dataArray)
-			} else {
-				c.parseSystemData(dataArray)
-			}
-		}
-	})
-
-	return cancel, err
-}
-
-func (c *perfdClient) parseProcessData(dataArray []interface{}) {
-	// dataArray example:
-	// [
-	//   map[
-	//     CPUCount:2
-	//     EnabledCPUs:2
-	//     PerCPUUsage:[
-	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.6363636363636402 CPU_UserLoad:-1]
-	//       map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:2.7272727272727195 CPU_UserLoad:-1]
-	//     ]
-	//     System:[36408520704 6897049600 3031160 773697 15596 61940 1297 26942 588 17020 127346 1835008 119718056 107009899 174046 103548]
-	//     SystemCPUUsage:map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:6.36363636363636 CPU_UserLoad:-1]
-	//     StartMachAbsTime:5896602132889
-	//     EndMachAbsTime:5896628486761
-	//     Type:41
-	//  ]
-	//  map[
-	//    Processes:map[
-	//      0:[1.3582834340402803 0]
-	//      124:[0.011456702068519481 124]
-	//      136:[0.05468332721703649 136]
-	//    ]
-	//    StartMachAbsTime:5896602295095
-	//    EndMachAbsTime:5896628780514
-	//    Type:5
-	//   ]
-	// ]
-
-	processData := make(map[string]interface{})
-	processData["type"] = "process"
-	processData["timestamp"] = time.Now().Unix()
-	processData["pid"] = c.option.Pid
-
-	defer func() {
-		processBytes, _ := json.Marshal(processData)
-		c.chanProcess <- processBytes
-	}()
-
-	systemInfo := dataArray[0].(map[string]interface{})
-	processInfo := dataArray[1].(map[string]interface{})
-	if _, ok := systemInfo["System"]; !ok {
-		systemInfo, processInfo = processInfo, systemInfo
-	}
-
-	var targetProcessValue []interface{}
-	processList := processInfo["Processes"].(map[string]interface{})
-	for pid, v := range processList {
-		if pid != strconv.Itoa(c.option.Pid) {
-			continue
-		}
-		targetProcessValue = v.([]interface{})
-	}
-
-	if targetProcessValue == nil {
-		processData["msg"] = fmt.Sprintf("process %d not found", c.option.Pid)
-		return
-	}
-
-	processAttributesMap := make(map[string]interface{})
-	for idx, value := range c.option.ProcessAttributes {
-		processAttributesMap[value] = targetProcessValue[idx]
-	}
-	processData["proc_perf"] = processAttributesMap
-
-	systemAttributesValue := systemInfo["System"].([]interface{})
-	systemAttributesMap := make(map[string]int64)
-	for idx, value := range c.option.SystemAttributes {
-		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
-	}
-	processData["sys_perf"] = systemAttributesMap
-}
-
-func (c *perfdClient) parseSystemData(dataArray []interface{}) {
-	timestamp := time.Now().Unix()
-	var systemInfo map[string]interface{}
-	data1 := dataArray[0].(map[string]interface{})
-	data2 := dataArray[1].(map[string]interface{})
-	if _, ok := data1["SystemCPUUsage"]; ok {
-		systemInfo = data1
-	} else {
-		systemInfo = data2
-	}
-
-	// systemInfo example:
-	// map[
-	//   CPUCount:2
-	//   EnabledCPUs:2
-	//   PerCPUUsage:[
-	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:3.9215686274509807 CPU_UserLoad:-1]
-	//     map[CPU_NiceLoad:0 CPU_SystemLoad:-1 CPU_TotalLoad:11.650485436893206 CPU_UserLoad:-1]]
-	//   ]
-	//   System:[704211 35486281728 6303789056 3001119 1001 11033 52668 1740 40022 2114 17310 126903 1835008 160323 107909856 95067 95808179]
-	//   SystemCPUUsage:map[
-	//     CPU_NiceLoad:0
-	//     CPU_SystemLoad:-1
-	//     CPU_TotalLoad:15.572054064344186
-	//     CPU_UserLoad:-1
-	//   ]
-	//   StartMachAbsTime:5339240248449
-	//   EndMachAbsTime:5339264441260
-	//   Type:41
-	// ]
-
-	if c.option.SysCPU {
-		sysCPUUsage := systemInfo["SystemCPUUsage"].(map[string]interface{})
-		sysCPUInfo := SystemCPUData{
-			PerfDataBase: PerfDataBase{
-				Type:      "sys_cpu",
-				TimeStamp: timestamp,
-			},
-			NiceLoad:   sysCPUUsage["CPU_NiceLoad"].(float64),
-			SystemLoad: sysCPUUsage["CPU_SystemLoad"].(float64),
-			TotalLoad:  sysCPUUsage["CPU_TotalLoad"].(float64),
-			UserLoad:   sysCPUUsage["CPU_UserLoad"].(float64),
-		}
-		cpuBytes, _ := json.Marshal(sysCPUInfo)
-		c.chanSysCPU <- cpuBytes
-	}
-
-	systemAttributesValue := systemInfo["System"].([]interface{})
-	systemAttributesMap := make(map[string]int64)
-	for idx, value := range c.option.SystemAttributes {
-		systemAttributesMap[value] = convert2Int64(systemAttributesValue[idx])
-	}
-
-	if c.option.SysMem {
-		kernelPageSize := int64(1) // why 16384 ?
-		appMemory := (systemAttributesMap["vmIntPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
-		cachedFiles := (systemAttributesMap["vmExtPageCount"] - systemAttributesMap["vmPurgeableCount"]) * kernelPageSize
-		compressed := systemAttributesMap["vmCompressorPageCount"] * kernelPageSize
-		usedMemory := (systemAttributesMap["vmUsedCount"] - systemAttributesMap["vmExtPageCount"]) * kernelPageSize
-		wiredMemory := systemAttributesMap["vmWireCount"] * kernelPageSize
-		swapUsed := systemAttributesMap["__vmSwapUsage"]
-		freeMemory := systemAttributesMap["vmFreeCount"] * kernelPageSize
-
-		sysMemInfo := SystemMemData{
-			PerfDataBase: PerfDataBase{
-				Type:      "sys_mem",
-				TimeStamp: timestamp,
-			},
-			AppMemory:   appMemory,
-			UsedMemory:  usedMemory,
-			WiredMemory: wiredMemory,
-			FreeMemory:  freeMemory,
-			CachedFiles: cachedFiles,
-			Compressed:  compressed,
-			SwapUsed:    swapUsed,
-		}
-		memBytes, _ := json.Marshal(sysMemInfo)
-		c.chanSysMem <- memBytes
-	}
-
-	if c.option.SysDisk {
-		diskBytesRead := systemAttributesMap["diskBytesRead"]
-		diskBytesWritten := systemAttributesMap["diskBytesWritten"]
-		diskReadOps := systemAttributesMap["diskReadOps"]
-		diskWriteOps := systemAttributesMap["diskWriteOps"]
-
-		sysDiskInfo := SystemDiskData{
-			PerfDataBase: PerfDataBase{
-				Type:      "sys_disk",
-				TimeStamp: timestamp,
-			},
-			DataRead:    diskBytesRead,
-			DataWritten: diskBytesWritten,
-			ReadOps:     diskReadOps,
-			WriteOps:    diskWriteOps,
-		}
-		diskBytes, _ := json.Marshal(sysDiskInfo)
-		c.chanSysDisk <- diskBytes
-	}
-
-	if c.option.SysNetwork {
-		netBytesIn := systemAttributesMap["netBytesIn"]
-		netBytesOut := systemAttributesMap["netBytesOut"]
-		netPacketsIn := systemAttributesMap["netPacketsIn"]
-		netPacketsOut := systemAttributesMap["netPacketsOut"]
-
-		sysNetworkInfo := SystemNetworkData{
-			PerfDataBase: PerfDataBase{
-				Type:      "sys_network",
-				TimeStamp: timestamp,
-			},
-			BytesIn:    netBytesIn,
-			BytesOut:   netBytesOut,
-			PacketsIn:  netPacketsIn,
-			PacketsOut: netPacketsOut,
-		}
-		networkBytes, _ := json.Marshal(sysNetworkInfo)
-		c.chanSysNetwork <- networkBytes
-	}
-}
-
-type SystemCPUData struct {
-	PerfDataBase         // system cpu
-	NiceLoad     float64 `json:"nice_load"`
-	SystemLoad   float64 `json:"system_load"`
-	TotalLoad    float64 `json:"total_load"`
-	UserLoad     float64 `json:"user_load"`
-}
-
-type SystemMemData struct {
-	PerfDataBase       // mem
-	AppMemory    int64 `json:"app_memory"`
-	FreeMemory   int64 `json:"free_memory"`
-	UsedMemory   int64 `json:"used_memory"`
-	WiredMemory  int64 `json:"wired_memory"`
-	CachedFiles  int64 `json:"cached_files"`
-	Compressed   int64 `json:"compressed"`
-	SwapUsed     int64 `json:"swap_used"`
-}
-
-type SystemDiskData struct {
-	PerfDataBase       // disk
-	DataRead     int64 `json:"data_read"`
-	DataWritten  int64 `json:"data_written"`
-	ReadOps      int64 `json:"reads_in"`
-	WriteOps     int64 `json:"writes_out"`
-}
-
-type SystemNetworkData struct {
-	PerfDataBase       // network
-	BytesIn      int64 `json:"bytes_in"`
-	BytesOut     int64 `json:"bytes_out"`
-	PacketsIn    int64 `json:"packets_in"`
-	PacketsOut   int64 `json:"packets_out"`
 }
 
 func convert2Int64(num interface{}) int64 {

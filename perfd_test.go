@@ -128,3 +128,32 @@ func TestPerfNetwork(t *testing.T) {
 		}
 	}
 }
+
+func TestPerfAll(t *testing.T) {
+	setupLockdownSrv(t)
+
+	data, err := dev.PerfStart(
+		WithPerfSystemCPU(true),
+		WithPerfSystemMem(true),
+		WithPerfSystemDisk(true),
+		WithPerfSystemNetwork(true),
+		WithPerfNetwork(true),
+		WithPerfFPS(true),
+		WithPerfGPU(true),
+		WithPerfBundleID("com.apple.mobilesafari"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timer := time.NewTimer(time.Duration(time.Second * 10))
+	for {
+		select {
+		case <-timer.C:
+			dev.PerfStop()
+			return
+		case d := <-data:
+			fmt.Println(string(d))
+		}
+	}
+}

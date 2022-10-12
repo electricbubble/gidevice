@@ -48,7 +48,7 @@ type device struct {
 	springBoard       SpringBoard
 	crashReportMover  CrashReportMover
 	pcapd             Pcapd
-	perfd             Perfd
+	perfd             []Perfd
 }
 
 func (d *device) Properties() DeviceProperties {
@@ -317,14 +317,19 @@ func (d *device) InstallationProxyLookup(opts ...InstallationProxyOption) (looku
 	return d.installationProxy.Lookup(opts...)
 }
 
+func (d *device) newInstrumentsService() (instruments Instruments, err error) {
+	// NOTICE: each instruments service should have individual connection, otherwise it will be blocked
+	if _, err = d.lockdownService(); err != nil {
+		return
+	}
+	return d.lockdown.InstrumentsService()
+}
+
 func (d *device) instrumentsService() (instruments Instruments, err error) {
 	if d.instruments != nil {
 		return d.instruments, nil
 	}
-	if _, err = d.lockdownService(); err != nil {
-		return nil, err
-	}
-	if d.instruments, err = d.lockdown.InstrumentsService(); err != nil {
+	if d.instruments, err = d.newInstrumentsService(); err != nil {
 		return nil, err
 	}
 	instruments = d.instruments
@@ -573,19 +578,99 @@ func (d *device) PcapStop() {
 }
 
 func (d *device) PerfStart(opts ...PerfOption) (data <-chan []byte, err error) {
-	if _, err = d.instrumentsService(); err != nil {
-		return nil, err
+	perfOptions := defaulPerfOption()
+	for _, fn := range opts {
+		fn(perfOptions)
 	}
 
-	d.perfd = d.newPerfdClient(d.instruments, opts...)
-	return d.perfd.Start()
+	// wait until get pid for bundle id
+	if perfOptions.BundleID != "" {
+		instruments, err := d.newInstrumentsService()
+		if err != nil {
+			fmt.Printf("get pid by bundle id failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		for {
+			pid, err := instruments.getPidByBundleID(perfOptions.BundleID)
+			if err != nil {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			perfOptions.Pid = pid
+			break
+		}
+	}
+
+	// processAttributes must contain pid, or it can't get process info, reason unknown
+	if !containString(perfOptions.ProcessAttributes, "pid") {
+		perfOptions.ProcessAttributes = append(perfOptions.ProcessAttributes, "pid")
+	}
+
+	outCh := make(chan []byte, 100)
+
+	if perfOptions.SysCPU || perfOptions.SysMem || perfOptions.SysDisk ||
+		perfOptions.SysNetwork {
+		perfd, err := d.newPerfdSysmontap(perfOptions)
+		if err != nil {
+			return nil, err
+		}
+		data, err := perfd.Start()
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			for {
+				outCh <- (<-data)
+			}
+		}()
+		d.perfd = append(d.perfd, perfd)
+	}
+
+	if perfOptions.Network {
+		perfd, err := d.newPerfdNetworking(perfOptions)
+		if err != nil {
+			return nil, err
+		}
+		data, err := perfd.Start()
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			for {
+				outCh <- (<-data)
+			}
+		}()
+		d.perfd = append(d.perfd, perfd)
+	}
+
+	if perfOptions.FPS || perfOptions.gpu {
+		perfd, err := d.newPerfdGraphicsOpengl(perfOptions)
+		if err != nil {
+			return nil, err
+		}
+		data, err := perfd.Start()
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			for {
+				outCh <- (<-data)
+			}
+		}()
+		d.perfd = append(d.perfd, perfd)
+	}
+
+	return outCh, nil
 }
 
 func (d *device) PerfStop() {
 	if d.perfd == nil {
 		return
 	}
-	d.perfd.Stop()
+	for _, p := range d.perfd {
+		p.Stop()
+	}
 }
 
 func (d *device) crashReportMoverService() (crashReportMover CrashReportMover, err error) {
