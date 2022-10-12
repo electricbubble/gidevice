@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
@@ -77,6 +76,9 @@ type Device interface {
 	springBoardService() (springBoard SpringBoard, err error)
 	GetIconPNGData(bundleId string) (raw *bytes.Buffer, err error)
 	GetInterfaceOrientation() (orientation OrientationState, err error)
+
+	PerfStart(opts ...PerfOption) (data <-chan []byte, err error)
+	PerfStop()
 }
 
 type DeviceProperties = libimobiledevice.DeviceProperties
@@ -143,11 +145,13 @@ type Instruments interface {
 	AppList(opts ...AppListOption) (apps []Application, err error)
 	DeviceInfo() (devInfo *DeviceInfo, err error)
 
+	getPidByBundleID(bundleID string) (pid int, err error)
 	appProcess(bundleID string) (err error)
 	startObserving(pid int) (err error)
 
 	notifyOfPublishedCapabilities() (err error)
 	requestChannel(channel string) (id uint32, err error)
+	call(channel, selector string, auxiliaries ...interface{}) (result *libimobiledevice.DTXMessageResult, err error)
 
 	// sysMonSetConfig(cfg ...interface{}) (err error)
 	// SysMonStart(cfg ...interface{}) (_ interface{}, err error)
@@ -214,6 +218,11 @@ type SyslogRelay interface {
 
 type Pcapd interface {
 	Packet() <-chan []byte
+	Stop()
+}
+
+type Perfd interface {
+	Start() (data <-chan []byte, err error)
 	Stop()
 }
 
@@ -469,5 +478,5 @@ func debugLog(msg string) {
 	if !debugFlag {
 		return
 	}
-	log.Println(fmt.Sprintf("[go-iDevice-debug] %s", msg))
+	fmt.Printf("[go-iDevice-debug] %s\n", msg)
 }

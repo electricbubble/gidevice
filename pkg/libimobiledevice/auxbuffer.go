@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+
 	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 )
 

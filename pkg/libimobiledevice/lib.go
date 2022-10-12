@@ -2,7 +2,6 @@ package libimobiledevice
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 )
 
@@ -25,5 +24,5 @@ func debugLog(msg string) {
 	if !debugFlag {
 		return
 	}
-	log.Println(fmt.Sprintf("[%s-debug] %s", ProgramName, msg))
+	log.Printf("[%s-debug] %s\n", ProgramName, msg)
 }

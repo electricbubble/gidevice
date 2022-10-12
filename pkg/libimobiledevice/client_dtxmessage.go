@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 	"io"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/electricbubble/gidevice/pkg/nskeyedarchiver"
 )
 
 const (
@@ -112,7 +113,7 @@ func (c *dtxMessageClient) SendDTXMessage(selector string, aux []byte, channelCo
 func (c *dtxMessageClient) ReceiveDTXMessage() (result *DTXMessageResult, err error) {
 	bufPayload := new(bytes.Buffer)
 
-	header := new(dtxMessageHeaderPacket)
+	var header *dtxMessageHeaderPacket = nil
 	var needToReply *dtxMessageHeaderPacket = nil
 
 	for {
@@ -242,7 +243,6 @@ func (c *dtxMessageClient) ReceiveDTXMessage() (result *DTXMessageResult, err er
 		c.mu.Lock()
 		c.resultMap[sk] = result
 		c.mu.Unlock()
-
 	}
 
 	return

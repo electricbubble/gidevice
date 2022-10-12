@@ -3,7 +3,24 @@ package giDevice
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/electricbubble/gidevice/pkg/libimobiledevice"
+)
+
+// instruments services
+const (
+	instrumentsServiceDeviceInfo              = "com.apple.instruments.server.services.deviceinfo"
+	instrumentsServiceProcessControl          = "com.apple.instruments.server.services.processcontrol"
+	instrumentsServiceDeviceApplictionListing = "com.apple.instruments.server.services.device.applictionListing"
+	instrumentsServiceGraphicsOpengl          = "com.apple.instruments.server.services.graphics.opengl"     // 获取 GPU/FPS
+	instrumentsServiceSysmontap               = "com.apple.instruments.server.services.sysmontap"           // 获取 CPU/Mem/Disk/Network 性能数据
+	instrumentsServiceNetworking              = "com.apple.instruments.server.services.networking"          // 获取所有网络详情数据
+	instrumentsServiceMobileNotifications     = "com.apple.instruments.server.services.mobilenotifications" // 监控应用状态
+)
+
+const (
+	instrumentsServiceXcodeNetworkStatistics = "com.apple.xcode.debug-gauge-data-providers.NetworkStatistics" // 获取单进程网络数据
+	instrumentsServiceXcodeEnergyStatistics  = "com.apple.xcode.debug-gauge-data-providers.Energy"            // 获取功耗数据
 )
 
 var _ Instruments = (*instruments)(nil)
@@ -27,6 +44,53 @@ func (i *instruments) requestChannel(channel string) (id uint32, err error) {
 	return i.client.RequestChannel(channel)
 }
 
+func (i *instruments) call(channel, selector string, auxiliaries ...interface{}) (
+	result *libimobiledevice.DTXMessageResult, err error) {
+
+	chanID, err := i.requestChannel(channel)
+	if err != nil {
+		return nil, err
+	}
+
+	args := libimobiledevice.NewAuxBuffer()
+	for _, aux := range auxiliaries {
+		if err = args.AppendObject(aux); err != nil {
+			return nil, err
+		}
+	}
+
+	return i.client.Invoke(selector, args, chanID, true)
+}
+
+func (i *instruments) getPidByBundleID(bundleID string) (pid int, err error) {
+	apps, err := i.AppList()
+	if err != nil {
+		fmt.Printf("get app list error: %v\n", err)
+		return 0, err
+	}
+
+	mapper := make(map[string]interface{})
+	for _, app := range apps {
+		mapper[app.ExecutableName] = app.CFBundleIdentifier
+	}
+
+	processes, err := i.AppRunningProcesses()
+	if err != nil {
+		fmt.Printf("get running app processes error: %v\n", err)
+		return 0, err
+	}
+	for _, proc := range processes {
+		b, ok := mapper[proc.Name]
+		if ok && bundleID == b {
+			fmt.Printf("get pid %d by bundleId %s\n", proc.Pid, bundleID)
+			return proc.Pid, nil
+		}
+	}
+
+	fmt.Printf("can't find pid by bundleID: %s\n", bundleID)
+	return 0, fmt.Errorf("can't find pid by bundleID: %s", bundleID)
+}
+
 func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid int, err error) {
 	opt := new(appLaunchOption)
 	opt.appPath = ""
@@ -41,7 +105,7 @@ func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid i
 	}
 
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return 0, err
 	}
 
@@ -77,7 +141,7 @@ func (i *instruments) AppLaunch(bundleID string, opts ...AppLaunchOption) (pid i
 
 func (i *instruments) appProcess(bundleID string) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -96,7 +160,7 @@ func (i *instruments) appProcess(bundleID string) (err error) {
 
 func (i *instruments) startObserving(pid int) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -119,7 +183,7 @@ func (i *instruments) startObserving(pid int) (err error) {
 
 func (i *instruments) AppKill(pid int) (err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.processcontrol"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceProcessControl); err != nil {
 		return err
 	}
 
@@ -138,7 +202,7 @@ func (i *instruments) AppKill(pid int) (err error) {
 
 func (i *instruments) AppRunningProcesses() (processes []Process, err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.deviceinfo"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceInfo); err != nil {
 		return nil, err
 	}
 
@@ -187,7 +251,7 @@ func (i *instruments) AppList(opts ...AppListOption) (apps []Application, err er
 	}
 
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.device.applictionListing"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceApplictionListing); err != nil {
 		return nil, err
 	}
 
@@ -232,7 +296,7 @@ func (i *instruments) AppList(opts ...AppListOption) (apps []Application, err er
 
 func (i *instruments) DeviceInfo() (devInfo *DeviceInfo, err error) {
 	var id uint32
-	if id, err = i.requestChannel("com.apple.instruments.server.services.deviceinfo"); err != nil {
+	if id, err = i.requestChannel(instrumentsServiceDeviceInfo); err != nil {
 		return nil, err
 	}
 
