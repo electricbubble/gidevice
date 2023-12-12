@@ -289,7 +289,7 @@ func (c *afc) RemoveAll(path string) (err error) {
 	return
 }
 
-func (c *afc) WriteFile(filename string, data []byte, perm AfcFileMode) (err error) {
+func (c *afc) WriteFile(filename string, r io.Reader, perm AfcFileMode) (err error) {
 	var file *AfcFile
 	if file, err = c.Open(filename, perm); err != nil {
 		return err
@@ -298,7 +298,7 @@ func (c *afc) WriteFile(filename string, data []byte, perm AfcFileMode) (err err
 		err = file.Close()
 	}()
 
-	if _, err = file.Write(data); err != nil {
+	if _, err = io.Copy(file, r); err != nil {
 		return err
 	}
 	return
