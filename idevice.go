@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -183,7 +184,7 @@ type Afc interface {
 	HashWithRange(filePath string, start, end uint64) ([]byte, error)
 	RemoveAll(path string) (err error)
 
-	WriteFile(filename string, data []byte, perm AfcFileMode) (err error)
+	WriteFile(filename string, r io.Reader, perm AfcFileMode) (err error)
 }
 
 type HouseArrest interface {

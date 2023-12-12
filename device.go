@@ -414,12 +414,9 @@ func (d *device) AppInstall(ipaPath string) (err error) {
 
 	installationPath := path.Join(stagingPath, fmt.Sprintf("%s.ipa", bundleID))
 
-	var data []byte
-	if data, err = os.ReadFile(ipaPath); err != nil {
-		return err
-	}
-	if err = d.afc.WriteFile(installationPath, data, AfcFileModeWr); err != nil {
-		return err
+	if r, err := os.Open(ipaPath); err != nil {return err} else {
+		defer r.Close()
+		if err = d.afc.WriteFile(installationPath, r, AfcFileModeWr); err != nil {return err}
 	}
 
 	if _, err = d.installationProxyService(); err != nil {
@@ -831,7 +828,7 @@ func (d *device) _uploadXCTestConfiguration(bundleID string, sessionId uuid.UUID
 		return "", err
 	}
 
-	if err = appAfc.WriteFile(pathXCTestCfg, content, AfcFileModeWr); err != nil {
+	if err = appAfc.WriteFile(pathXCTestCfg, bytes.NewReader(content), AfcFileModeWr); err != nil {
 		return "", err
 	}
 
